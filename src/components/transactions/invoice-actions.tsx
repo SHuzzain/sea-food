@@ -1,12 +1,26 @@
 "use client";
 
+import Image from "next/image";
 import { Download, MessageCircle, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SavedSale } from "@/app/(app)/sale/actions";
 import { formatKg, formatRupee } from "@/lib/utils";
 
+const logoSrc = "/brand/arf-seafoods-logo.jpeg";
+
 function pdfMoney(value: number) {
   return `INR ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+async function imageToDataUrl(src: string) {
+  const response = await fetch(src);
+  const blob = await response.blob();
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 function whatsappPhone(mobile: string) {
@@ -22,17 +36,20 @@ export function InvoiceActions({ sale }: { sale: SavedSale }) {
     const { jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
     const doc = new jsPDF();
+    const logoDataUrl = await imageToDataUrl(logoSrc);
 
+    doc.addImage(logoDataUrl, "JPEG", 14, 10, 24, 24);
     doc.setFontSize(16);
-    doc.text("Seafood Billing", 14, 18);
+    doc.text("ARF Seafoods", 44, 18);
     doc.setFontSize(10);
-    doc.text(`Invoice No: ${sale.invoiceNo}`, 14, 28);
-    doc.text(`Invoice Date: ${sale.invoiceDate}`, 14, 34);
-    doc.text(`Customer: ${sale.customer.name}`, 14, 44);
-    doc.text(`Mobile: ${sale.customer.mobile || "-"}`, 14, 50);
+    doc.text("Fresh from nature, delivered with care", 44, 24);
+    doc.text(`Invoice No: ${sale.invoiceNo}`, 14, 42);
+    doc.text(`Invoice Date: ${sale.invoiceDate}`, 14, 48);
+    doc.text(`Customer: ${sale.customer.name}`, 14, 58);
+    doc.text(`Mobile: ${sale.customer.mobile || "-"}`, 14, 64);
 
     autoTable(doc, {
-      startY: 58,
+      startY: 72,
       head: [["Product", "Kg", "Rate", "Amount"]],
       body: sale.items.map((item) => [
         item.productName,
@@ -91,7 +108,13 @@ export function InvoiceActions({ sale }: { sale: SavedSale }) {
       </div>
 
       <div className="print-invoice">
-        <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Seafood Billing</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <Image src={logoSrc} alt="ARF Seafoods logo" width={64} height={64} style={{ objectFit: "cover" }} />
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>ARF Seafoods</h1>
+            <p style={{ margin: "4px 0 0", fontSize: 12 }}>Fresh from nature, delivered with care</p>
+          </div>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
           <div>
             <p>Customer: {sale.customer.name}</p>

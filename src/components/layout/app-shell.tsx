@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
@@ -10,11 +11,9 @@ import {
   Home,
   LogOut,
   Menu,
-  Package,
   Plus,
   ReceiptIndianRupee,
   ShoppingBag,
-  Store,
   Truck,
   Users
 } from "lucide-react";
@@ -28,6 +27,8 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
+const logoSrc = "/brand/arf-seafoods-logo.jpeg";
 
 type User = {
   id: string;
@@ -102,11 +103,9 @@ export function AppShell({ user, children }: { user: User; children: React.React
       <aside className="hidden border-r bg-card lg:block">
         <div className="sticky top-0 flex h-dvh flex-col">
           <div className="flex h-20 items-center gap-3 border-b px-5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Store className="h-6 w-6" />
-            </div>
+            <Image src={logoSrc} alt="ARF Seafoods logo" width={44} height={44} className="h-11 w-11 rounded-md object-cover" />
             <div>
-              <p className="font-semibold">Seafood Billing</p>
+              <p className="font-semibold">ARF Seafoods</p>
               <p className="text-xs text-muted-foreground">Purchase and sales</p>
             </div>
           </div>
@@ -147,11 +146,9 @@ export function AppShell({ user, children }: { user: User; children: React.React
         <header className="sticky top-0 z-30 border-b bg-card/95 backdrop-blur lg:hidden">
           <div className="flex h-16 items-center justify-between px-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <Package className="h-5 w-5" />
-              </div>
+              <Image src={logoSrc} alt="ARF Seafoods logo" width={40} height={40} className="h-10 w-10 rounded-md object-cover" />
               <div>
-                <p className="text-sm font-semibold">Seafood Billing</p>
+                <p className="text-sm font-semibold">ARF Seafoods</p>
                 <p className="text-xs text-muted-foreground">{user.name}</p>
               </div>
             </div>
