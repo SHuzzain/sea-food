@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { SelectOption } from "@/lib/options";
+import type { BusinessProfile } from "@/lib/documents/types";
+import { DEFAULT_BUSINESS_PROFILE } from "@/lib/documents/types";
 import { formatKg, formatRupee, toMoney, toQuantity } from "@/lib/utils";
 
 type Line = {
@@ -28,11 +30,13 @@ function newLine(): Line {
 export function SaleForm({
   customers,
   products,
-  today
+  today,
+  profile = DEFAULT_BUSINESS_PROFILE
 }: {
   customers: SelectOption[];
   products: SelectOption[];
   today: string;
+  profile?: BusinessProfile;
 }) {
   const router = useRouter();
   const [customerOptions, setCustomerOptions] = useState(customers);
@@ -267,7 +271,7 @@ export function SaleForm({
                 <strong>{formatRupee(savedSale.currentBalance)}</strong>
               </p>
             </div>
-            <InvoiceActions sale={savedSale} />
+            <InvoiceActions sale={savedSale} profile={profile} />
           </CardContent>
         </Card>
       ) : null}

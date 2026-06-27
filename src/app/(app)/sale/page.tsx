@@ -1,13 +1,15 @@
 import { SaleForm } from "@/components/transactions/sale-form";
 import { Card, CardContent } from "@/components/ui/card";
+import { getBusinessProfile } from "@/lib/business-profile";
 import { getCustomerOptions, getProductOptions } from "@/lib/options";
 import { prisma } from "@/lib/prisma";
 import { decimalToNumber, formatRupee, todayInputValue } from "@/lib/utils";
 
 export default async function SalePage() {
-  const [customers, products, recentSales] = await Promise.all([
+  const [customers, products, profile, recentSales] = await Promise.all([
     getCustomerOptions(),
     getProductOptions(),
+    getBusinessProfile(),
     prisma.sale.findMany({
       orderBy: { createdAt: "desc" },
       take: 5,
@@ -22,7 +24,7 @@ export default async function SalePage() {
         <p className="text-sm text-muted-foreground">Create mobile-friendly sale bills and share invoices.</p>
       </div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <SaleForm customers={customers} products={products} today={todayInputValue()} />
+        <SaleForm customers={customers} products={products} today={todayInputValue()} profile={profile} />
         <aside className="space-y-3">
           <h2 className="font-semibold">Recent Sales</h2>
           {recentSales.length ? (

@@ -2,23 +2,42 @@
 
 import { Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { BusinessProfile } from "@/lib/documents/types";
+import { DEFAULT_BUSINESS_PROFILE } from "@/lib/documents/types";
+import { addPdfHeader } from "@/lib/documents/pdf-header";
 
 export type ReportDownloadData = {
   label: string;
   from: string;
   to: string;
+  customerName?: string;
+  customerFiltered: boolean;
+  business: BusinessProfile;
   summary: {
     purchase: number;
     sales: number;
     collection: number;
-    profit: number;
+    outstanding: number;
   };
   weeklySellBuy: Array<{
     date: string;
     purchase: number;
     sales: number;
-    profit: number;
+    balance: number;
   }>;
+  statement?: {
+    openingBalance: number;
+    closingBalance: number;
+    totalSales: number;
+    totalPayments: number;
+    rows: Array<{
+      date: string;
+      particulars: string;
+      debit: number;
+      credit: number;
+      balance: number;
+    }>;
+  };
   purchases: Array<{
     date: string;
     supplier: string;
@@ -43,12 +62,6 @@ export type ReportDownloadData = {
     mode: string;
     amount: number;
   }>;
-  profit: {
-    sales: number;
-    purchase: number;
-    expense: number;
-    profit: number;
-  };
 };
 
 function money(value: number) {
@@ -80,48 +93,115 @@ function safeFilename(label: string) {
   return `reports-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "download"}`;
 }
 
-export function ReportDownloadActions({ report }: { report: ReportDownloadData }) {
+function csvBusinessHeader(business: BusinessProfile) {
+  return [
+    csvLine([business.businessName]),
+    ...(business.businessTagline ? [csvLine(["Tagline", business.businessTagline])] : []),
+    ...(business.businessAddress ? [csvLine(["Address", business.businessAddress])] : []),
+    ...(business.businessMobile ? [csvLine(["Mobile", business.businessMobile])] : []),
+    ""
+  ];
+}
+
+export function ReportDownloadActions({
+  report,
+  profile = report.business ?? DEFAULT_BUSINESS_PROFILE
+}: {
+  report: ReportDownloadData;
+  profile?: BusinessProfile;
+}) {
   async function downloadPdf() {
     const { jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
     const doc = new jsPDF();
 
-    doc.setFontSize(16);
-    doc.text("Seafood Billing Reports", 14, 18);
+    const headerEndY = await addPdfHeader(doc, profile);
+    doc.setFontSize(14);
+    doc.text("Reports", 14, headerEndY);
     doc.setFontSize(10);
-    doc.text(`Period: ${report.label}`, 14, 26);
-    doc.text(`From: ${report.from}  To: ${report.to}`, 14, 32);
+    let metaY = headerEndY + 8;
+    doc.text(`Period: ${report.label}`, 14, metaY);
+    metaY += 6;
+    doc.text(`From: ${report.from}  To: ${report.to}`, 14, metaY);
+    metaY += 6;
+    if (report.customerName) {
+      doc.text(`Customer: ${report.customerName}`, 14, metaY);
+      metaY += 6;
+    }
+
+    const summaryHead = report.customerFiltered
+      ? [["Sales", "Collection", "Outstanding"]]
+      : [["Purchase", "Sales", "Collection", "Outstanding"]];
+    const summaryBody = report.customerFiltered
+      ? [[money(report.summary.sales), money(report.summary.collection), money(report.summary.outstanding)]]
+      : [
+          [
+            money(report.summary.purchase),
+            money(report.summary.sales),
+            money(report.summary.collection),
+            money(report.summary.outstanding)
+          ]
+        ];
 
     autoTable(doc, {
-      startY: 40,
-      head: [["Purchase", "Sales", "Collection", "Profit"]],
-      body: [[money(report.summary.purchase), money(report.summary.sales), money(report.summary.collection), money(report.summary.profit)]]
+      startY: metaY + 4,
+      head: summaryHead,
+      body: summaryBody
     });
 
     let nextY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 55;
     const sections = [
-      ...(report.weeklySellBuy.length
+      ...(report.statement
         ? [
             {
-              title: "Weekly Sell & Buy Summary",
-              head: [["Date", "Purchase / Buy", "Sales / Sell", "Balance"]],
+              title: "Customer Statement",
+              head: [["Date", "Particulars", "Debit", "Credit", "Balance"]],
               body: [
-                ...report.weeklySellBuy.map((row) => [row.date, money(row.purchase), money(row.sales), money(row.profit)]),
+                ["Opening", "Opening Balance", money(report.statement.openingBalance), "-", money(report.statement.openingBalance)],
+                ...report.statement.rows.map((row) => [
+                  row.date,
+                  row.particulars,
+                  row.debit ? money(row.debit) : "-",
+                  row.credit ? money(row.credit) : "-",
+                  money(row.balance)
+                ]),
                 [
-                  "Week Total",
-                  money(report.weeklySellBuy.reduce((sum, row) => sum + row.purchase, 0)),
-                  money(report.weeklySellBuy.reduce((sum, row) => sum + row.sales, 0)),
-                  money(report.weeklySellBuy.reduce((sum, row) => sum + row.profit, 0))
+                  "Closing",
+                  "Closing Balance",
+                  money(report.statement.totalSales),
+                  money(report.statement.totalPayments),
+                  money(report.statement.closingBalance)
                 ]
               ]
             }
           ]
         : []),
-      {
-        title: "Purchase Report",
-        head: [["Date", "Supplier", "Products", "Amount"]],
-        body: report.purchases.map((row) => [row.date, row.supplier, row.products, money(row.amount)])
-      },
+      ...(report.weeklySellBuy.length && !report.customerFiltered
+        ? [
+            {
+              title: "Weekly Sell & Buy Summary",
+              head: [["Date", "Purchase / Buy", "Sales / Sell", "Balance"]],
+              body: [
+                ...report.weeklySellBuy.map((row) => [row.date, money(row.purchase), money(row.sales), money(row.balance)]),
+                [
+                  "Week Total",
+                  money(report.weeklySellBuy.reduce((sum, row) => sum + row.purchase, 0)),
+                  money(report.weeklySellBuy.reduce((sum, row) => sum + row.sales, 0)),
+                  money(report.weeklySellBuy.reduce((sum, row) => sum + row.balance, 0))
+                ]
+              ]
+            }
+          ]
+        : []),
+      ...(!report.customerFiltered
+        ? [
+            {
+              title: "Purchase Report",
+              head: [["Date", "Supplier", "Products", "Amount"]],
+              body: report.purchases.map((row) => [row.date, row.supplier, row.products, money(row.amount)])
+            }
+          ]
+        : []),
       {
         title: "Sales Report",
         head: [["Date", "Invoice", "Customer", "Products", "Amount"]],
@@ -136,11 +216,6 @@ export function ReportDownloadActions({ report }: { report: ReportDownloadData }
         title: "Payment Collection Report",
         head: [["Date", "Customer", "Mode", "Amount"]],
         body: report.payments.map((row) => [row.date, row.customer, row.mode, money(row.amount)])
-      },
-      {
-        title: "Profit Report",
-        head: [["Sales", "Purchase", "Expense", "Profit"]],
-        body: [[money(report.profit.sales), money(report.profit.purchase), money(report.profit.expense), money(report.profit.profit)]]
       }
     ];
 
@@ -165,32 +240,55 @@ export function ReportDownloadActions({ report }: { report: ReportDownloadData }
 
   function downloadCsv() {
     const lines = [
-      csvLine(["Seafood Billing Reports"]),
+      ...csvBusinessHeader(profile),
+      csvLine(["Reports"]),
       csvLine(["Period", report.label]),
       csvLine(["From", report.from, "To", report.to]),
-      "",
+      ...(report.customerName ? [csvLine(["Customer", report.customerName]), ""] : [""]),
       csvLine(["Summary"]),
-      csvLine(["Purchase", "Sales", "Collection", "Profit"]),
-      csvLine([report.summary.purchase, report.summary.sales, report.summary.collection, report.summary.profit]),
-      "",
-      ...(report.weeklySellBuy.length
+      ...(report.customerFiltered
+        ? [
+            csvLine(["Sales", "Collection", "Outstanding"]),
+            csvLine([report.summary.sales, report.summary.collection, report.summary.outstanding]),
+            ""
+          ]
+        : [
+            csvLine(["Purchase", "Sales", "Collection", "Outstanding"]),
+            csvLine([report.summary.purchase, report.summary.sales, report.summary.collection, report.summary.outstanding]),
+            ""
+          ]),
+      ...(report.statement
+        ? [
+            csvLine(["Customer Statement"]),
+            csvLine(["Opening Balance", report.statement.openingBalance]),
+            csvLine(["Date", "Particulars", "Debit", "Credit", "Balance"]),
+            ...report.statement.rows.map((row) => csvLine([row.date, row.particulars, row.debit, row.credit, row.balance])),
+            csvLine(["Closing Balance", report.statement.closingBalance]),
+            ""
+          ]
+        : []),
+      ...(report.weeklySellBuy.length && !report.customerFiltered
         ? [
             csvLine(["Weekly Sell & Buy Summary"]),
             csvLine(["Date", "Purchase / Buy", "Sales / Sell", "Balance"]),
-            ...report.weeklySellBuy.map((row) => csvLine([row.date, row.purchase, row.sales, row.profit])),
+            ...report.weeklySellBuy.map((row) => csvLine([row.date, row.purchase, row.sales, row.balance])),
             csvLine([
               "Week Total",
               report.weeklySellBuy.reduce((sum, row) => sum + row.purchase, 0),
               report.weeklySellBuy.reduce((sum, row) => sum + row.sales, 0),
-              report.weeklySellBuy.reduce((sum, row) => sum + row.profit, 0)
+              report.weeklySellBuy.reduce((sum, row) => sum + row.balance, 0)
             ]),
             ""
           ]
         : []),
-      csvLine(["Purchase Report"]),
-      csvLine(["Date", "Supplier", "Products", "Amount"]),
-      ...report.purchases.map((row) => csvLine([row.date, row.supplier, row.products, row.amount])),
-      "",
+      ...(!report.customerFiltered
+        ? [
+            csvLine(["Purchase Report"]),
+            csvLine(["Date", "Supplier", "Products", "Amount"]),
+            ...report.purchases.map((row) => csvLine([row.date, row.supplier, row.products, row.amount])),
+            ""
+          ]
+        : []),
       csvLine(["Sales Report"]),
       csvLine(["Date", "Invoice", "Customer", "Products", "Amount"]),
       ...report.sales.map((row) => csvLine([row.date, row.invoiceNo, row.customer, row.products, row.amount])),
@@ -201,11 +299,7 @@ export function ReportDownloadActions({ report }: { report: ReportDownloadData }
       "",
       csvLine(["Payment Collection Report"]),
       csvLine(["Date", "Customer", "Mode", "Amount"]),
-      ...report.payments.map((row) => csvLine([row.date, row.customer, row.mode, row.amount])),
-      "",
-      csvLine(["Profit Report"]),
-      csvLine(["Sales", "Purchase", "Expense", "Profit"]),
-      csvLine([report.profit.sales, report.profit.purchase, report.profit.expense, report.profit.profit])
+      ...report.payments.map((row) => csvLine([row.date, row.customer, row.mode, row.amount]))
     ];
 
     downloadBlob(`${safeFilename(report.label)}.csv`, lines.join("\n"), "text/csv;charset=utf-8");

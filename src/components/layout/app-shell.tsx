@@ -13,6 +13,7 @@ import {
   Menu,
   Plus,
   ReceiptIndianRupee,
+  Settings,
   ShoppingBag,
   Truck,
   Users
@@ -48,7 +49,8 @@ const desktopLinks = [
   ...mobileLinks,
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/suppliers", label: "Suppliers", icon: Truck },
-  { href: "/products", label: "Products", icon: Fish }
+  { href: "/products", label: "Products", icon: Fish },
+  { href: "/settings", label: "Settings", icon: Settings }
 ];
 
 function isActive(pathname: string, href: string) {
@@ -167,6 +169,9 @@ export function AppShell({ user, children }: { user: User; children: React.React
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/products">Products</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/settings">Settings</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>

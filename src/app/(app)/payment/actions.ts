@@ -3,6 +3,7 @@
 import { PaymentMode } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import type { PaymentReceiptDocument } from "@/lib/documents/types";
 import { prisma } from "@/lib/prisma";
 import { decimalToNumber, parseDateInput, toMoney } from "@/lib/utils";
 
@@ -79,9 +80,23 @@ export async function createPayment(payload: PaymentPayload) {
     return createdPayment;
   });
 
+  const receipt: PaymentReceiptDocument = {
+    refNo: payment.id.slice(-8).toUpperCase(),
+    paymentDate: paymentDate.toLocaleDateString("en-IN"),
+    customer: {
+      name: customer.name,
+      mobile: customer.mobile ?? ""
+    },
+    amount,
+    paymentMode: mode,
+    notes: payload.notes?.trim() || "",
+    previousBalance,
+    currentBalance
+  };
+
   revalidatePath("/");
   revalidatePath("/payment");
   revalidatePath("/customers");
   revalidatePath("/reports");
-  return { ok: true, paymentId: payment.id, currentBalance };
+  return { ok: true, paymentId: payment.id, currentBalance, receipt };
 }

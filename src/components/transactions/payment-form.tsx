@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Save, Search } from "lucide-react";
 import { createPayment, type PaymentPayload } from "@/app/(app)/payment/actions";
 import { QuickAddCustomerDialog } from "@/components/forms/quick-add-dialogs";
+import { PaymentReceiptActions } from "@/components/transactions/payment-receipt-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,9 +14,19 @@ import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import type { SelectOption } from "@/lib/options";
+import type { BusinessProfile, PaymentReceiptDocument } from "@/lib/documents/types";
+import { DEFAULT_BUSINESS_PROFILE } from "@/lib/documents/types";
 import { formatRupee, toMoney } from "@/lib/utils";
 
-export function PaymentForm({ customers, today }: { customers: SelectOption[]; today: string }) {
+export function PaymentForm({
+  customers,
+  today,
+  profile = DEFAULT_BUSINESS_PROFILE
+}: {
+  customers: SelectOption[];
+  today: string;
+  profile?: BusinessProfile;
+}) {
   const router = useRouter();
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState("");
@@ -30,6 +41,7 @@ export function PaymentForm({ customers, today }: { customers: SelectOption[]; t
   const [quickCustomerOpen, setQuickCustomerOpen] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [savedReceipt, setSavedReceipt] = useState<PaymentReceiptDocument | null>(null);
   const [pending, startTransition] = useTransition();
 
   const selectedCustomer = customerOptions.find((customer) => customer.id === customerId);
@@ -63,6 +75,7 @@ export function PaymentForm({ customers, today }: { customers: SelectOption[]; t
   function searchCustomer() {
     setError("");
     setSuccess("");
+    setSavedReceipt(null);
     setHasSearched(true);
     setCustomerId("");
 
@@ -92,6 +105,7 @@ export function PaymentForm({ customers, today }: { customers: SelectOption[]; t
     event.preventDefault();
     setError("");
     setSuccess("");
+    setSavedReceipt(null);
     const payload: PaymentPayload = {
       customerId,
       paymentDate,
@@ -111,6 +125,7 @@ export function PaymentForm({ customers, today }: { customers: SelectOption[]; t
           current.map((customer) => (customer.id === customerId ? { ...customer, balance: result.currentBalance } : customer))
         );
         setSuccess(`Payment saved. Current balance ${formatRupee(result.currentBalance)}.`);
+        setSavedReceipt(result.receipt ?? null);
         setAmount("");
         setNotes("");
         setSearchMessage("");
@@ -273,6 +288,17 @@ export function PaymentForm({ customers, today }: { customers: SelectOption[]; t
           </CardContent>
         </Card>
       </form>
+
+      {savedReceipt ? (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Payment Receipt</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PaymentReceiptActions receipt={savedReceipt} profile={profile} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <QuickAddCustomerDialog
         open={quickCustomerOpen}

@@ -64,6 +64,18 @@ async function main() {
       status: Status.ACTIVE
     }
   });
+
+  await prisma.appSettings.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      businessName: "ARF Seafoods",
+      businessTagline: "Fresh from nature, delivered with care",
+      businessAddress: "Ramanathapuram",
+      businessMobile: ""
+    }
+  });
 }
 
 main()

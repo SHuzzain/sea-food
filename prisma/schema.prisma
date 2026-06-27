@@ -194,3 +194,12 @@ model Expense {
 
   @@index([expenseDate])
 }
+
+model AppSettings {
+  id              String   @id @default("default")
+  businessName    String   @default("ARF Seafoods")
+  businessTagline String   @default("Fresh from nature, delivered with care")
+  businessAddress String   @default("")
+  businessMobile  String   @default("")
+  updatedAt       DateTime @updatedAt
+}

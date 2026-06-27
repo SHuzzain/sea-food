@@ -39,28 +39,25 @@ export default async function DashboardPage() {
   const todayTo = endOfDay(now);
   const weekFrom = startOfWeek(now);
 
-  const [todayPurchase, todaySales, todayPayments, outstanding, weekPurchases, weekSaleRows, weekExpenses] =
-    await Promise.all([
-      sumPurchase(todayFrom, todayTo),
-      sumSales(todayFrom, todayTo),
-      sumPayments(todayFrom, todayTo),
-      prisma.customer.aggregate({ _sum: { outstandingBalance: true }, where: { status: "ACTIVE" } }),
-      prisma.purchase.findMany({
-        where: { purchaseDate: { gte: weekFrom, lte: todayTo } },
-        select: { purchaseDate: true, totalAmount: true }
-      }),
-      prisma.sale.findMany({
-        where: { invoiceDate: { gte: weekFrom, lte: todayTo } },
-        select: { invoiceDate: true, totalAmount: true }
-      }),
-      prisma.expense.aggregate({ _sum: { amount: true }, where: { expenseDate: { gte: weekFrom, lte: todayTo } } })
-    ]);
+  const [todayPurchase, todaySales, todayPayments, outstanding, weekPurchases, weekSaleRows] = await Promise.all([
+    sumPurchase(todayFrom, todayTo),
+    sumSales(todayFrom, todayTo),
+    sumPayments(todayFrom, todayTo),
+    prisma.customer.aggregate({ _sum: { outstandingBalance: true }, where: { status: "ACTIVE" } }),
+    prisma.purchase.findMany({
+      where: { purchaseDate: { gte: weekFrom, lte: todayTo } },
+      select: { purchaseDate: true, totalAmount: true }
+    }),
+    prisma.sale.findMany({
+      where: { invoiceDate: { gte: weekFrom, lte: todayTo } },
+      select: { invoiceDate: true, totalAmount: true }
+    })
+  ]);
 
   const weeklySellBuyRows = buildWeeklySellBuyRows(weekFrom, todayTo, weekPurchases, weekSaleRows);
   const weekPurchase = weeklySellBuyRows.reduce((sum, row) => sum + row.purchase, 0);
   const weekSalesTotal = weeklySellBuyRows.reduce((sum, row) => sum + row.sales, 0);
   const weekSellBuyBalance = weekSalesTotal - weekPurchase;
-  const weekProfit = weekSellBuyBalance - decimalToNumber(weekExpenses._sum.amount);
 
   const cards = [
     { title: "Today Purchase", value: formatRupee(todayPurchase), icon: ShoppingBag, href: "/purchase" },
@@ -78,13 +75,7 @@ export default async function DashboardPage() {
       href: "/customers"
     },
     { title: "This Week Purchase", value: formatRupee(weekPurchase), icon: ShoppingBag, href: "/reports?range=week" },
-    { title: "This Week Sales", value: formatRupee(weekSalesTotal), icon: BarChart3, href: "/reports?range=week" },
-    {
-      title: "Profit",
-      value: formatRupee(weekProfit),
-      icon: TrendingUp,
-      href: "/reports?range=week"
-    }
+    { title: "This Week Sales", value: formatRupee(weekSalesTotal), icon: BarChart3, href: "/reports?range=week" }
   ];
 
   return (
@@ -101,7 +92,7 @@ export default async function DashboardPage() {
           </Link>
         </Button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
