@@ -1,5 +1,5 @@
-import { unstable_cache } from "next/cache";
 import type { Prisma } from "@prisma/client";
+import { unstable_cacheLife, unstable_cacheTag } from "next/cache";
 import { CACHE_TAGS } from "@/lib/cache/tags";
 import { prisma } from "@/lib/prisma";
 import { buildPageMeta, DEFAULT_PAGE_SIZE, pageOffset, type PageMeta } from "@/lib/pagination";
@@ -7,6 +7,11 @@ import type { DateRangeFilter } from "@/lib/utils";
 import { transactionDateWhere } from "@/lib/utils";
 
 const LIST_CACHE_SECONDS = 300;
+
+function applyListCacheLife(tag: string) {
+  unstable_cacheLife({ revalidate: LIST_CACHE_SECONDS });
+  unstable_cacheTag(tag);
+}
 
 function productWhere(q: string): Prisma.ProductWhereInput {
   if (!q) {
@@ -112,6 +117,14 @@ type PaymentsListQuery = {
   customerId?: string;
 };
 
+type SupplierPaymentsListQuery = {
+  page: number;
+  rangeKey: string;
+  from?: string;
+  to?: string;
+  supplierId?: string;
+};
+
 function salesWhere(range: DateRangeFilter, customerId?: string): Prisma.SaleWhereInput {
   return {
     ...transactionDateWhere(range, "invoiceDate"),
@@ -130,6 +143,13 @@ function paymentsWhere(range: DateRangeFilter, customerId?: string): Prisma.Paym
   return {
     ...transactionDateWhere(range, "paymentDate"),
     ...(customerId ? { customerId } : {})
+  };
+}
+
+function supplierPaymentsWhere(range: DateRangeFilter, supplierId?: string): Prisma.SupplierPaymentWhereInput {
+  return {
+    ...transactionDateWhere(range, "paymentDate"),
+    ...(supplierId ? { supplierId } : {})
   };
 }
 
@@ -181,70 +201,64 @@ async function fetchPaymentsPage(query: PaymentsListQuery, range: DateRangeFilte
   return { items, pagination: buildPageMeta(query.page, total) };
 }
 
-export function getCachedProductsPage(page: number, q: string) {
-  return unstable_cache(() => fetchProductsPage(page, q), ["products-page", String(page), q], {
-    tags: [CACHE_TAGS.products],
-    revalidate: LIST_CACHE_SECONDS
-  })();
+export async function getCachedProductsPage(page: number, q: string) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.products);
+  return fetchProductsPage(page, q);
 }
 
-export function getCachedSuppliersPage(page: number, q: string) {
-  return unstable_cache(() => fetchSuppliersPage(page, q), ["suppliers-page", String(page), q], {
-    tags: [CACHE_TAGS.suppliers],
-    revalidate: LIST_CACHE_SECONDS
-  })();
+export async function getCachedSuppliersPage(page: number, q: string) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.suppliers);
+  return fetchSuppliersPage(page, q);
 }
 
-export function getCachedCustomersPage(page: number, q: string) {
-  return unstable_cache(() => fetchCustomersPage(page, q), ["customers-page", String(page), q], {
-    tags: [CACHE_TAGS.customers],
-    revalidate: LIST_CACHE_SECONDS
-  })();
+export async function getCachedCustomersPage(page: number, q: string) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.customers);
+  return fetchCustomersPage(page, q);
 }
 
-export function getCachedSalesPage(query: SalesListQuery, range: DateRangeFilter) {
-  const key = [
-    "sales-page",
-    String(query.page),
-    query.rangeKey,
-    query.from ?? "",
-    query.to ?? "",
-    query.customerId ?? ""
-  ];
-  return unstable_cache(() => fetchSalesPage(query, range), key, {
-    tags: [CACHE_TAGS.sales],
-    revalidate: LIST_CACHE_SECONDS
-  })();
+export async function getCachedSalesPage(query: SalesListQuery, range: DateRangeFilter) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.sales);
+  return fetchSalesPage(query, range);
 }
 
-export function getCachedPurchasesPage(query: PurchasesListQuery, range: DateRangeFilter) {
-  const key = [
-    "purchases-page",
-    String(query.page),
-    query.rangeKey,
-    query.from ?? "",
-    query.to ?? "",
-    query.supplierId ?? ""
-  ];
-  return unstable_cache(() => fetchPurchasesPage(query, range), key, {
-    tags: [CACHE_TAGS.purchases],
-    revalidate: LIST_CACHE_SECONDS
-  })();
+export async function getCachedPurchasesPage(query: PurchasesListQuery, range: DateRangeFilter) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.purchases);
+  return fetchPurchasesPage(query, range);
 }
 
-export function getCachedPaymentsPage(query: PaymentsListQuery, range: DateRangeFilter) {
-  const key = [
-    "payments-page",
-    String(query.page),
-    query.rangeKey,
-    query.from ?? "",
-    query.to ?? "",
-    query.customerId ?? ""
-  ];
-  return unstable_cache(() => fetchPaymentsPage(query, range), key, {
-    tags: [CACHE_TAGS.payments],
-    revalidate: LIST_CACHE_SECONDS
-  })();
+export async function getCachedPaymentsPage(query: PaymentsListQuery, range: DateRangeFilter) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.payments);
+  return fetchPaymentsPage(query, range);
+}
+
+async function fetchSupplierPaymentsPage(query: SupplierPaymentsListQuery, range: DateRangeFilter) {
+  const where = supplierPaymentsWhere(range, query.supplierId);
+  const [items, total] = await Promise.all([
+    prisma.supplierPayment.findMany({
+      where,
+      orderBy: { paymentDate: "desc" },
+      skip: pageOffset(query.page),
+      take: DEFAULT_PAGE_SIZE,
+      include: {
+        supplier: true,
+        ledgerEntries: { take: 1, orderBy: { entryDate: "desc" } }
+      }
+    }),
+    prisma.supplierPayment.count({ where })
+  ]);
+  return { items, pagination: buildPageMeta(query.page, total) };
+}
+
+export async function getCachedSupplierPaymentsPage(query: SupplierPaymentsListQuery, range: DateRangeFilter) {
+  "use cache";
+  applyListCacheLife(CACHE_TAGS.supplierPayments);
+  return fetchSupplierPaymentsPage(query, range);
 }
 
 export type { PageMeta };

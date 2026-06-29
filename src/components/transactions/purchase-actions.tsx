@@ -49,7 +49,7 @@ export function PurchaseActions({
   }
 
   async function handleDelete() {
-    if (!editable || !window.confirm("Delete this purchase?")) {
+    if (!editable || !window.confirm("Delete this purchase? Supplier balance will be recalculated.")) {
       return;
     }
     const result = await deletePurchase(editable.id);

@@ -67,6 +67,9 @@ export default async function PurchasePage({ searchParams }: PurchasePageProps) 
       supplierName: purchase.supplier.name,
       productNames: items.map((item) => item.productName).join(", "),
       totalAmount: decimalToNumber(purchase.totalAmount),
+      paidAmount: decimalToNumber(purchase.paidAmount),
+      currentBalance: decimalToNumber(purchase.currentBalance),
+      previousBalance: decimalToNumber(purchase.previousBalance),
       document: {
         refNo,
         purchaseDate,
@@ -75,12 +78,16 @@ export default async function PurchasePage({ searchParams }: PurchasePageProps) 
           mobile: purchase.supplier.mobile ?? ""
         },
         items,
-        totalAmount: decimalToNumber(purchase.totalAmount)
+        previousBalance: decimalToNumber(purchase.previousBalance),
+        totalAmount: decimalToNumber(purchase.totalAmount),
+        paidAmount: decimalToNumber(purchase.paidAmount),
+        currentBalance: decimalToNumber(purchase.currentBalance)
       },
       editable: {
         id: purchase.id,
         purchaseDate: todayInputValue(purchase.purchaseDate),
         supplierId: purchase.supplierId,
+        paidAmount: decimalToNumber(purchase.paidAmount),
         items: purchase.items.map((item) => ({
           productId: item.productId,
           kg: decimalToNumber(item.kg),

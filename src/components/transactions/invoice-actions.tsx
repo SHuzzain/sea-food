@@ -131,7 +131,9 @@ export function InvoiceActions({
               <tr key={`${item.productName}-${item.kg}-${item.rate}`}>
                 <td style={{ border: "1px solid #111", padding: 6 }}>{item.productName}</td>
                 <td style={{ border: "1px solid #111", padding: 6, textAlign: "right" }}>{formatKg(item.kg)}</td>
-                <td style={{ border: "1px solid #111", padding: 6, textAlign: "right" }}>{formatRupee(item.rate)}</td>
+                <td style={{ border: "1px solid #111", padding: 6, textAlign: "right" }}>
+                  {Number(item.rate || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                </td>
                 <td style={{ border: "1px solid #111", padding: 6, textAlign: "right" }}>{formatRupee(item.amount)}</td>
               </tr>
             ))}

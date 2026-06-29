@@ -1,4 +1,4 @@
-import { unstable_cache } from "next/cache";
+import { unstable_cacheLife, unstable_cacheTag } from "next/cache";
 import { CACHE_TAGS } from "@/lib/cache/tags";
 import { prisma } from "@/lib/prisma";
 import { decimalToNumber } from "@/lib/utils";
@@ -31,12 +31,13 @@ async function fetchSupplierOptions(): Promise<SelectOption[]> {
   const suppliers = await prisma.supplier.findMany({
     where: { status: "ACTIVE" },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, mobile: true }
+    select: { id: true, name: true, mobile: true, outstandingBalance: true }
   });
   return suppliers.map((supplier) => ({
     id: supplier.id,
     label: supplier.name,
-    meta: supplier.mobile ?? ""
+    meta: supplier.mobile ?? "",
+    balance: decimalToNumber(supplier.outstandingBalance)
   }));
 }
 
@@ -54,23 +55,23 @@ async function fetchProductOptions(): Promise<SelectOption[]> {
   }));
 }
 
-export function getCustomerOptions() {
-  return unstable_cache(fetchCustomerOptions, ["customer-options"], {
-    tags: [CACHE_TAGS.options, CACHE_TAGS.customers],
-    revalidate: OPTIONS_CACHE_SECONDS
-  })();
+export async function getCustomerOptions() {
+  "use cache";
+  unstable_cacheLife({ revalidate: OPTIONS_CACHE_SECONDS });
+  unstable_cacheTag(CACHE_TAGS.options, CACHE_TAGS.customers);
+  return fetchCustomerOptions();
 }
 
-export function getSupplierOptions() {
-  return unstable_cache(fetchSupplierOptions, ["supplier-options"], {
-    tags: [CACHE_TAGS.options, CACHE_TAGS.suppliers],
-    revalidate: OPTIONS_CACHE_SECONDS
-  })();
+export async function getSupplierOptions() {
+  "use cache";
+  unstable_cacheLife({ revalidate: OPTIONS_CACHE_SECONDS });
+  unstable_cacheTag(CACHE_TAGS.options, CACHE_TAGS.suppliers);
+  return fetchSupplierOptions();
 }
 
-export function getProductOptions() {
-  return unstable_cache(fetchProductOptions, ["product-options"], {
-    tags: [CACHE_TAGS.options, CACHE_TAGS.products],
-    revalidate: OPTIONS_CACHE_SECONDS
-  })();
+export async function getProductOptions() {
+  "use cache";
+  unstable_cacheLife({ revalidate: OPTIONS_CACHE_SECONDS });
+  unstable_cacheTag(CACHE_TAGS.options, CACHE_TAGS.products);
+  return fetchProductOptions();
 }

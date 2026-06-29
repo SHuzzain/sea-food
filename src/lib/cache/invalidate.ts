@@ -9,6 +9,8 @@ export function invalidateProductsCache() {
 export function invalidateSuppliersCache() {
   revalidateTag(CACHE_TAGS.suppliers);
   revalidateTag(CACHE_TAGS.options);
+  revalidateTag(CACHE_TAGS.purchases);
+  revalidateTag(CACHE_TAGS.supplierPayments);
 }
 
 export function invalidateCustomersCache() {
@@ -28,4 +30,8 @@ export function invalidatePurchasesCache() {
 
 export function invalidatePaymentsCache() {
   revalidateTag(CACHE_TAGS.payments);
+}
+
+export function invalidateSupplierPaymentsCache() {
+  revalidateTag(CACHE_TAGS.supplierPayments);
 }

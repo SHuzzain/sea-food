@@ -1,6 +1,7 @@
 import type { BusinessProfile, SavedSaleDocument } from "@/lib/documents/types";
 import { addPdfHeader } from "@/lib/documents/pdf-header";
-import { getAutoTableFinalY, pdfMoney } from "@/lib/documents/pdf-utils";
+import { pdfTableOptions } from "@/lib/documents/pdf-table";
+import { drawPdfBalanceFooter, getAutoTableFinalY, pdfMoney, pdfPlainKg, pdfPlainRate } from "@/lib/documents/pdf-utils";
 
 export async function buildInvoicePdf(sale: SavedSaleDocument, profile: BusinessProfile) {
   const { jsPDF } = await import("jspdf");
@@ -14,24 +15,21 @@ export async function buildInvoicePdf(sale: SavedSaleDocument, profile: Business
   doc.text(`Customer: ${sale.customer.name}`, 14, startY + 16);
   doc.text(`Mobile: ${sale.customer.mobile || "-"}`, 14, startY + 22);
 
-  autoTable(doc, {
-    startY: startY + 28,
-    head: [["Product", "Kg", "Rate", "Amount"]],
-    body: sale.items.map((item) => [item.productName, item.kg.toString(), pdfMoney(item.rate), pdfMoney(item.amount)])
-  });
+  const head = ["Product", "Kg", "Rate", "Amount"];
+  const body = sale.items.map((item) => [
+    item.productName,
+    pdfPlainKg(item.kg),
+    pdfPlainRate(item.rate),
+    pdfMoney(item.amount)
+  ]);
+  autoTable(doc, pdfTableOptions(head, body, startY + 28));
 
-  const finalY = getAutoTableFinalY(doc, startY + 36);
-  const rows = [
+  drawPdfBalanceFooter(doc, getAutoTableFinalY(doc, startY + 36), [
     ["Previous Balance", pdfMoney(sale.previousBalance)],
     ["Total Amount", pdfMoney(sale.totalAmount)],
     ["Received Amount", pdfMoney(sale.receivedAmount)],
     ["Current Balance", pdfMoney(sale.currentBalance)]
-  ];
-  rows.forEach((row, index) => {
-    const y = finalY + 12 + index * 7;
-    doc.text(row[0], 120, y);
-    doc.text(row[1], 190, y, { align: "right" });
-  });
+  ]);
 
   return doc.output("blob");
 }

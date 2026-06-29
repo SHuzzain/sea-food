@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Check, ChevronDown, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, formatRupee } from "@/lib/utils";
 import type { SelectOption } from "@/lib/options";
 
 type SearchableSelectProps = {
@@ -16,6 +16,8 @@ type SearchableSelectProps = {
   onAdd?: () => void;
   addLabel?: string;
   className?: string;
+  displayKey?: "label" | "meta";
+  showBalance?: boolean;
 };
 
 export function SearchableSelect({
@@ -26,11 +28,15 @@ export function SearchableSelect({
   placeholder,
   onAdd,
   addLabel,
-  className
+  className,
+  displayKey = "label",
+  showBalance = false
 }: SearchableSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((option) => option.id === value);
+  const selectedDisplay =
+    displayKey === "meta" ? selected?.meta || selected?.label || "" : selected?.label ?? "";
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -55,7 +61,7 @@ export function SearchableSelect({
       </div>
       <div className="relative">
         <Input
-          value={open ? query : selected?.label ?? ""}
+          value={open ? query : selectedDisplay}
           onFocus={() => {
             setOpen(true);
             setQuery("");
@@ -87,7 +93,12 @@ export function SearchableSelect({
                     <span className="block truncate font-medium">{option.label}</span>
                     {option.meta ? <span className="block truncate text-xs text-muted-foreground">{option.meta}</span> : null}
                   </span>
-                  {option.id === value ? <Check className="h-4 w-4 text-primary" /> : null}
+                  <span className="flex shrink-0 items-center gap-2">
+                    {showBalance && option.balance !== undefined ? (
+                      <span className="text-xs font-semibold">{formatRupee(option.balance)}</span>
+                    ) : null}
+                    {option.id === value ? <Check className="h-4 w-4 text-primary" /> : null}
+                  </span>
                 </button>
               ))
             ) : (

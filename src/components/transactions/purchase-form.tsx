@@ -38,6 +38,7 @@ export function PurchaseForm({
   const [productOptions, setProductOptions] = useState(products);
   const [supplierId, setSupplierId] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(today);
+  const [paidAmount, setPaidAmount] = useState("");
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [quickSupplierOpen, setQuickSupplierOpen] = useState(false);
   const [quickProductOpen, setQuickProductOpen] = useState(false);
@@ -45,10 +46,13 @@ export function PurchaseForm({
   const [success, setSuccess] = useState("");
   const [pending, startTransition] = useTransition();
 
+  const selectedSupplier = supplierOptions.find((supplier) => supplier.id === supplierId);
+  const previousBalance = selectedSupplier?.balance ?? 0;
   const total = useMemo(
     () => lines.reduce((sum, line) => sum + toMoney(toQuantity(line.kg) * toMoney(line.rate)), 0),
     [lines]
   );
+  const currentBalance = previousBalance + total - toMoney(paidAmount);
 
   function updateLine(key: string, patch: Partial<Line>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -65,6 +69,7 @@ export function PurchaseForm({
     const payload: PurchasePayload = {
       purchaseDate,
       supplierId,
+      paidAmount: Number(paidAmount || 0),
       items: lines.map((line) => ({
         productId: line.productId,
         kg: Number(line.kg || 0),
@@ -79,8 +84,14 @@ export function PurchaseForm({
           setError(result.error ?? "Unable to save purchase.");
           return;
         }
-        setSuccess(`Purchase saved. Total ${formatRupee(result.totalAmount)}.`);
+        setSuccess(`Purchase saved. Total ${formatRupee(result.totalAmount)}. Balance ${formatRupee(result.currentBalance ?? 0)}.`);
+        setSupplierOptions((current) =>
+          current.map((supplier) =>
+            supplier.id === supplierId ? { ...supplier, balance: result.currentBalance ?? supplier.balance } : supplier
+          )
+        );
         setLines([newLine()]);
+        setPaidAmount("");
         router.refresh();
       })();
     });
@@ -176,9 +187,33 @@ export function PurchaseForm({
 
         <Card>
           <CardContent className="space-y-4 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-muted-foreground">Total Amount</span>
-              <span className="text-2xl font-semibold">{formatRupee(total)}</span>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="paidAmount">Paid Amount</Label>
+                <Input
+                  id="paidAmount"
+                  inputMode="decimal"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={paidAmount}
+                  onChange={(event) => setPaidAmount(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Previous Balance</Label>
+                <div className="flex h-12 items-center rounded-md border bg-muted px-3 font-semibold">{formatRupee(previousBalance)}</div>
+              </div>
+            </div>
+            <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Total Amount</span>
+                <span className="font-semibold">{formatRupee(total)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Current Balance</span>
+                <span className="text-lg font-semibold">{formatRupee(currentBalance)}</span>
+              </div>
             </div>
             {error ? <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
             {success ? <p className="rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground">{success}</p> : null}

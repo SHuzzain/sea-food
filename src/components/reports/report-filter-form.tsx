@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState, type ReactNode } from "react";
+import { FormEvent, SubmitEvent, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Filter } from "lucide-react";
 import type { ReportTab } from "@/lib/reports/tabs";
@@ -53,7 +53,7 @@ export function ReportFilterForm({
   const showProduct = tab === "purchase" || tab === "sales";
   const showCustomDates = showDateRange && selectedRange === "custom";
 
-  function applyFilter(event: FormEvent<HTMLFormElement>) {
+  function applyFilter(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const params = new URLSearchParams();

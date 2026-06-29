@@ -1,11 +1,12 @@
 "use client";
 
 import { PaymentMode } from "@prisma/client";
-import { FormEvent, useMemo, useState, useTransition } from "react";
+import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Search } from "lucide-react";
+import { Save } from "lucide-react";
 import { createPayment, type PaymentPayload } from "@/app/(app)/payment/actions";
 import { QuickAddCustomerDialog } from "@/components/forms/quick-add-dialogs";
+import { SearchableSelect } from "@/components/forms/searchable-select";
 import { PaymentReceiptActions } from "@/components/transactions/payment-receipt-actions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,10 +31,6 @@ export function PaymentForm({
   const router = useRouter();
   const [customerOptions, setCustomerOptions] = useState(customers);
   const [customerId, setCustomerId] = useState("");
-  const [customerNameSearch, setCustomerNameSearch] = useState("");
-  const [mobileSearch, setMobileSearch] = useState("");
-  const [hasSearched, setHasSearched] = useState(false);
-  const [searchMessage, setSearchMessage] = useState("");
   const [paymentDate, setPaymentDate] = useState(today);
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
@@ -47,65 +44,18 @@ export function PaymentForm({
   const selectedCustomer = customerOptions.find((customer) => customer.id === customerId);
   const previousBalance = selectedCustomer?.balance ?? 0;
   const currentBalance = previousBalance - toMoney(amount);
-  const searchResults = useMemo(() => {
-    if (!hasSearched) {
-      return [];
-    }
-
-    const nameNeedle = customerNameSearch.trim().toLowerCase();
-    const mobileNeedle = mobileSearch.replace(/\D/g, "");
-    if (!nameNeedle && !mobileNeedle) {
-      return [];
-    }
-
-    return customerOptions.filter((customer) => {
-      const nameMatches = nameNeedle ? customer.label.toLowerCase().includes(nameNeedle) : true;
-      const mobileMatches = mobileNeedle ? (customer.meta ?? "").replace(/\D/g, "").includes(mobileNeedle) : true;
-      return nameMatches && mobileMatches;
-    });
-  }, [customerNameSearch, customerOptions, hasSearched, mobileSearch]);
-
-  function selectCustomer(customer: SelectOption) {
-    setCustomerId(customer.id);
-    setCustomerNameSearch(customer.label);
-    setMobileSearch(customer.meta ?? "");
-    setSearchMessage("");
-  }
-
-  function searchCustomer() {
-    setError("");
-    setSuccess("");
-    setSavedReceipt(null);
-    setHasSearched(true);
-    setCustomerId("");
-
-    const nameNeedle = customerNameSearch.trim().toLowerCase();
-    const mobileNeedle = mobileSearch.replace(/\D/g, "");
-    if (!nameNeedle && !mobileNeedle) {
-      setSearchMessage("Enter customer name or mobile number to search.");
-      return;
-    }
-
-    const matches = customerOptions.filter((customer) => {
-      const nameMatches = nameNeedle ? customer.label.toLowerCase().includes(nameNeedle) : true;
-      const mobileMatches = mobileNeedle ? (customer.meta ?? "").replace(/\D/g, "").includes(mobileNeedle) : true;
-      return nameMatches && mobileMatches;
-    });
-
-    if (matches.length === 1) {
-      selectCustomer(matches[0]);
-      setSearchMessage("");
-      return;
-    }
-
-    setSearchMessage(matches.length ? "Select a customer from the matching results." : "No customer found.");
-  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setSuccess("");
     setSavedReceipt(null);
+
+    if (!customerId) {
+      setError("Select a customer.");
+      return;
+    }
+
     const payload: PaymentPayload = {
       customerId,
       paymentDate,
@@ -128,7 +78,6 @@ export function PaymentForm({
         setSavedReceipt(result.receipt ?? null);
         setAmount("");
         setNotes("");
-        setSearchMessage("");
         router.refresh();
       })();
     });
@@ -139,77 +88,29 @@ export function PaymentForm({
       <form onSubmit={submit} className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Payment Entry</CardTitle>
+            <CardTitle>Customer Payment</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold">Select customer</h2>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setQuickCustomerOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Customer
-                </Button>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px]">
-                <div className="space-y-2">
-                  <Label htmlFor="customerNameSearch">Customer Name</Label>
-                  <Input
-                    id="customerNameSearch"
-                    value={customerNameSearch}
-                    onChange={(event) => {
-                      setCustomerNameSearch(event.target.value);
-                      setCustomerId("");
-                      setHasSearched(false);
-                      setSearchMessage("");
-                    }}
-                    placeholder="Customer Name"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mobileSearch">Mobile No</Label>
-                  <Input
-                    id="mobileSearch"
-                    value={mobileSearch}
-                    onChange={(event) => {
-                      setMobileSearch(event.target.value);
-                      setCustomerId("");
-                      setHasSearched(false);
-                      setSearchMessage("");
-                    }}
-                    placeholder="Mobile No"
-                    inputMode="tel"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button type="button" className="w-full" onClick={searchCustomer}>
-                    <Search className="h-4 w-4" />
-                    Search
-                  </Button>
-                </div>
-              </div>
-              {searchMessage ? (
-                <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">{searchMessage}</p>
-              ) : null}
-              {hasSearched && searchResults.length > 1 ? (
-                <div className="overflow-hidden rounded-md border">
-                  {searchResults.map((customer) => (
-                    <button
-                      type="button"
-                      key={customer.id}
-                      onClick={() => selectCustomer(customer)}
-                      className="flex w-full items-center justify-between gap-3 border-b px-3 py-3 text-left text-sm last:border-b-0 hover:bg-muted"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{customer.label}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{customer.meta || "No mobile"}</span>
-                      </span>
-                      <span className="shrink-0 font-semibold">{formatRupee(customer.balance ?? 0)}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : null}
+            <div className="grid gap-4 lg:grid-cols-2">
+              <SearchableSelect
+                label="Customer"
+                options={customerOptions}
+                value={customerId}
+                onChange={setCustomerId}
+                placeholder="Search customer name"
+                onAdd={() => setQuickCustomerOpen(true)}
+                addLabel="Customer"
+                showBalance
+              />
+              <SearchableSelect
+                label="Mobile"
+                options={customerOptions}
+                value={customerId}
+                onChange={setCustomerId}
+                placeholder="Search mobile number"
+                displayKey="meta"
+                showBalance
+              />
             </div>
 
             {selectedCustomer ? (
@@ -217,7 +118,7 @@ export function PaymentForm({
                 <div className="rounded-md border bg-muted/50 p-3">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Customer</p>
+                      <p className="text-sm text-muted-foreground">Selected customer</p>
                       <p className="font-semibold">{selectedCustomer.label}</p>
                       <p className="text-sm text-muted-foreground">{selectedCustomer.meta || "No mobile"}</p>
                     </div>
@@ -282,7 +183,7 @@ export function PaymentForm({
               </>
             ) : (
               <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                Search by customer name or mobile number to enter payment details.
+                Search and select a customer by name or mobile to enter payment details.
               </div>
             )}
           </CardContent>
@@ -305,8 +206,7 @@ export function PaymentForm({
         onOpenChange={setQuickCustomerOpen}
         onCreated={(option) => {
           setCustomerOptions((current) => [...current, option].sort((a, b) => a.label.localeCompare(b.label)));
-          selectCustomer(option);
-          setHasSearched(false);
+          setCustomerId(option.id);
         }}
       />
     </>

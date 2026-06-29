@@ -4,6 +4,7 @@ import { toPaymentReceipt } from "@/lib/payment-receipt";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CustomerStatementActions } from "@/components/reports/customer-statement-actions";
+import { SupplierStatementActions } from "@/components/reports/supplier-statement-actions";
 import { ReportFilterForm } from "@/components/reports/report-filter-form";
 import { ReportTabs } from "@/components/reports/report-tabs";
 import { DEFAULT_REPORT_TAB, isReportTab, type ReportTab } from "@/lib/reports/tabs";
@@ -13,6 +14,7 @@ import { PaymentReceiptActions } from "@/components/transactions/payment-receipt
 import { PurchaseActions } from "@/components/transactions/purchase-actions";
 import { getBusinessProfile } from "@/lib/business-profile";
 import { buildCustomerStatementData } from "@/lib/customer-statement";
+import { buildSupplierStatementData } from "@/lib/supplier-statement";
 import { getCustomerOptions, getProductOptions, getSupplierOptions } from "@/lib/options";
 import { prisma } from "@/lib/prisma";
 import {
@@ -25,6 +27,7 @@ import {
   startOfWeek,
   todayInputValue
 } from "@/lib/utils";
+import { pdfMoney } from "@/lib/documents/pdf-utils";
 import { buildWeeklySellBuyRows } from "@/lib/weekly-sell-buy";
 
 type ReportsPageProps = {
@@ -43,6 +46,8 @@ type TransactionItem = {
   productId: string;
   product: { name: string };
   amount: { toString(): string };
+  kg: { toString(): string };
+  rate: { toString(): string };
 };
 
 function filteredItems<T extends { productId: string }>(items: T[], productId?: string) {
@@ -51,6 +56,23 @@ function filteredItems<T extends { productId: string }>(items: T[], productId?: 
 
 function sumItemAmounts(items: Array<{ amount: { toString(): string } }>) {
   return items.reduce((sum, item) => sum + decimalToNumber(item.amount), 0);
+}
+
+function sumItemKg(items: TransactionItem[], productId?: string) {
+  return filteredItems(items, productId).reduce((sum, item) => sum + decimalToNumber(item.kg), 0);
+}
+
+function formatReportKg(kg: number) {
+  return Number(kg || 0)
+    .toLocaleString("en-IN", { maximumFractionDigits: 3 })
+    .replace(/\.?0+$/, "");
+}
+
+function formatBlendedRate(amount: number, kg: number) {
+  if (!kg) {
+    return "-";
+  }
+  return formatReportMoney(amount / kg);
 }
 
 function productNames(items: TransactionItem[], productId?: string) {
@@ -141,7 +163,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     purchaseTotal,
     salesTotal,
     paymentTotal,
-    customerStatement
+    customerStatement,
+    supplierStatement
   ] = await Promise.all([
     getCustomerOptions(),
     getSupplierOptions(),
@@ -169,10 +192,11 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
         ledgerEntries: { take: 1, orderBy: { entryDate: "desc" } }
       }
     }),
-    prisma.purchase.aggregate({ where: purchaseWhere, _sum: { totalAmount: true } }),
+    prisma.purchase.aggregate({ where: purchaseWhere, _sum: { totalAmount: true, paidAmount: true } }),
     prisma.sale.aggregate({ where: saleWhere, _sum: { totalAmount: true, receivedAmount: true } }),
     prisma.payment.aggregate({ where: { paymentDate: dateWhere, ...customerWhere }, _sum: { amount: true } }),
-    customerId ? buildCustomerStatementData(customerId, from, to, range.label) : Promise.resolve(null)
+    customerId ? buildCustomerStatementData(customerId, from, to, range.label) : Promise.resolve(null),
+    supplierId ? buildSupplierStatementData(supplierId, from, to, range.label) : Promise.resolve(null)
   ]);
 
   const selectedCustomer = customerId ? customers.find((customer) => customer.id === customerId) : undefined;
@@ -188,6 +212,17 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const purchaseAmount = productId
     ? purchases.reduce((sum, purchase) => sum + sumItemAmounts(filteredItems(purchase.items, productId)), 0)
     : decimalToNumber(purchaseTotal._sum.totalAmount);
+  const purchasePaid = productId
+    ? purchases.reduce((sum, purchase) => {
+        const purchaseTotalAmount = decimalToNumber(purchase.totalAmount);
+        const filteredTotal = sumItemAmounts(filteredItems(purchase.items, productId));
+        if (!purchaseTotalAmount) {
+          return sum;
+        }
+        const ratio = filteredTotal / purchaseTotalAmount;
+        return sum + decimalToNumber(purchase.paidAmount) * ratio;
+      }, 0)
+    : decimalToNumber(purchaseTotal._sum.paidAmount);
   const saleAmount = productId
     ? sales.reduce((sum, sale) => sum + sumItemAmounts(filteredItems(sale.items, productId)), 0)
     : decimalToNumber(salesTotal._sum.totalAmount);
@@ -226,21 +261,50 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     periodLabel: range.label,
     from: periodFrom,
     to: periodTo,
-    customerName: [selectedSupplier?.label, selectedProduct?.label].filter(Boolean).join(" · ") || undefined,
-    head: ["Date", "Supplier", "Products", "Amount"],
-    rows: purchases.map((purchase) => [
-      purchase.purchaseDate.toLocaleDateString("en-IN"),
-      purchase.supplier.name,
-      productNames(purchase.items, productId),
-      formatReportMoney(
-        productId ? sumItemAmounts(filteredItems(purchase.items, productId)) : decimalToNumber(purchase.totalAmount)
-      )
-    ]),
-    totalRow: ["Total", "", "", formatReportMoney(purchaseAmount)],
-    summaryRows: [
+    metaLines: [
       ...(selectedSupplier ? [{ label: "Supplier", value: selectedSupplier.label }] : []),
-      ...(selectedProduct ? [{ label: "Product", value: selectedProduct.label }] : []),
-      { label: "Total Purchase", value: formatRupee(purchaseAmount) }
+      ...(selectedProduct ? [{ label: "Product", value: selectedProduct.label }] : [])
+    ],
+    openingBalance: supplierStatement ? supplierStatement.openingBalance : undefined,
+    head: ["Date", "Supplier", "Products", "Kg", "Rate", "Amount", "Paid"],
+    rows: purchases.map((purchase) => {
+      const visibleItems = filteredItems(purchase.items, productId);
+      const amount = productId ? sumItemAmounts(visibleItems) : decimalToNumber(purchase.totalAmount);
+      const kg = sumItemKg(purchase.items, productId);
+      const paid = productId
+        ? (() => {
+            const purchaseTotalAmount = decimalToNumber(purchase.totalAmount);
+            return purchaseTotalAmount ? decimalToNumber(purchase.paidAmount) * (amount / purchaseTotalAmount) : 0;
+          })()
+        : decimalToNumber(purchase.paidAmount);
+
+      return [
+        purchase.purchaseDate.toLocaleDateString("en-IN"),
+        purchase.supplier.name,
+        productNames(purchase.items, productId),
+        formatReportKg(kg),
+        formatBlendedRate(amount, kg),
+        formatReportMoney(amount),
+        formatReportMoney(paid)
+      ];
+    }),
+    totalRow: [
+      "Total",
+      "",
+      "",
+      formatReportKg(purchases.reduce((sum, purchase) => sum + sumItemKg(purchase.items, productId), 0)),
+      "",
+      formatReportMoney(purchaseAmount),
+      formatReportMoney(purchasePaid)
+    ],
+    summaryRows: [
+      { label: "Previous Balance", value: pdfMoney(supplierStatement?.openingBalance ?? 0) },
+      { label: "Total Amount", value: pdfMoney(purchaseAmount) },
+      { label: "Paid Amount", value: pdfMoney(purchasePaid) },
+      {
+        label: "Current Balance",
+        value: pdfMoney(supplierStatement?.closingBalance ?? purchaseAmount - purchasePaid)
+      }
     ]
   };
 
@@ -249,20 +313,51 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     periodLabel: range.label,
     from: periodFrom,
     to: periodTo,
-    customerName: [selectedCustomer?.label, selectedProduct?.label].filter(Boolean).join(" · ") || undefined,
-    head: ["Date", "Invoice", "Customer", "Products", "Amount"],
-    rows: sales.map((sale) => [
-      sale.invoiceDate.toLocaleDateString("en-IN"),
-      sale.invoiceNo,
-      sale.customer.name,
-      productNames(sale.items, productId),
-      formatReportMoney(productId ? sumItemAmounts(filteredItems(sale.items, productId)) : decimalToNumber(sale.totalAmount))
-    ]),
-    totalRow: ["Total", "", "", "", formatReportMoney(saleAmount)],
-    summaryRows: [
+    metaLines: [
       ...(selectedCustomer ? [{ label: "Customer", value: selectedCustomer.label }] : []),
-      ...(selectedProduct ? [{ label: "Product", value: selectedProduct.label }] : []),
-      { label: "Total Sales", value: formatRupee(saleAmount) }
+      ...(selectedProduct ? [{ label: "Product", value: selectedProduct.label }] : [])
+    ],
+    openingBalance: customerStatement ? customerStatement.openingBalance : undefined,
+    head: ["Date", "Invoice", "Customer", "Products", "Kg", "Rate", "Amount", "Received"],
+    rows: sales.map((sale) => {
+      const amount = productId ? sumItemAmounts(filteredItems(sale.items, productId)) : decimalToNumber(sale.totalAmount);
+      const kg = sumItemKg(sale.items, productId);
+      const received = productId
+        ? (() => {
+            const saleTotal = decimalToNumber(sale.totalAmount);
+            return saleTotal ? decimalToNumber(sale.receivedAmount) * (amount / saleTotal) : 0;
+          })()
+        : decimalToNumber(sale.receivedAmount);
+
+      return [
+        sale.invoiceDate.toLocaleDateString("en-IN"),
+        sale.invoiceNo,
+        sale.customer.name,
+        productNames(sale.items, productId),
+        formatReportKg(kg),
+        formatBlendedRate(amount, kg),
+        formatReportMoney(amount),
+        formatReportMoney(received)
+      ];
+    }),
+    totalRow: [
+      "Total",
+      "",
+      "",
+      "",
+      formatReportKg(sales.reduce((sum, sale) => sum + sumItemKg(sale.items, productId), 0)),
+      "",
+      formatReportMoney(saleAmount),
+      formatReportMoney(saleReceived)
+    ],
+    summaryRows: [
+      { label: "Previous Balance", value: pdfMoney(customerStatement?.openingBalance ?? 0) },
+      { label: "Total Amount", value: pdfMoney(saleAmount) },
+      { label: "Received Amount", value: pdfMoney(saleReceived) },
+      {
+        label: "Current Balance",
+        value: pdfMoney(customerStatement?.closingBalance ?? saleAmount - saleReceived)
+      }
     ]
   };
 
@@ -271,6 +366,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     periodLabel: activeTab === "outstanding" ? "Current" : range.label,
     from: activeTab === "outstanding" ? "—" : periodFrom,
     to: activeTab === "outstanding" ? "—" : periodTo,
+    metaLines: selectedCustomer ? [{ label: "Customer", value: selectedCustomer.label }] : [],
     head: ["Customer", "Mobile", "Balance"],
     rows: outstandingCustomers.map((customer) => [
       customer.name,
@@ -286,7 +382,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     periodLabel: range.label,
     from: periodFrom,
     to: periodTo,
-    customerName: selectedCustomer?.label,
+    metaLines: selectedCustomer ? [{ label: "Customer", value: selectedCustomer.label }] : [],
     head: ["Date", "Customer", "Mode", "Amount"],
     rows: payments.map((payment) => [
       payment.paymentDate.toLocaleDateString("en-IN"),
@@ -394,13 +490,27 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
               </Card>
             ) : null}
 
+            {supplierStatement ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between gap-3">
+                    Supplier Statement
+                    <Badge variant="outline">{range.label}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SupplierStatementActions statement={supplierStatement} profile={profile} />
+                </CardContent>
+              </Card>
+            ) : null}
+
             <Card>
               <CardHeader className="space-y-3">
                 <CardTitle className="flex items-center justify-between gap-3">
                   Purchase Report
-                  <Badge variant="outline">{range.label}</Badge>
+                  {selectedSupplier ? <Badge variant="outline">{selectedSupplier.label}</Badge> : <Badge variant="outline">{range.label}</Badge>}
                 </CardTitle>
-                <SectionReportActions section={purchaseSection} profile={profile} compact />
+                <SectionReportActions section={purchaseSection} profile={profile} compact showSummary />
               </CardHeader>
               <CardContent className="space-y-3">
                 {purchases.length ? (
@@ -415,6 +525,14 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                     amount: decimalToNumber(item.amount)
                   }));
                   const displayAmount = productId ? sumItemAmounts(visibleItems) : decimalToNumber(purchase.totalAmount);
+                  const displayPaid = productId
+                    ? (() => {
+                        const purchaseTotalAmount = decimalToNumber(purchase.totalAmount);
+                        return purchaseTotalAmount
+                          ? decimalToNumber(purchase.paidAmount) * (displayAmount / purchaseTotalAmount)
+                          : 0;
+                      })()
+                    : decimalToNumber(purchase.paidAmount);
 
                   return (
                     <div key={purchase.id} className="rounded-md border p-3">
@@ -434,7 +552,10 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                                 mobile: purchase.supplier.mobile ?? ""
                               },
                               items,
-                              totalAmount: displayAmount
+                              previousBalance: decimalToNumber(purchase.previousBalance),
+                              totalAmount: displayAmount,
+                              paidAmount: displayPaid,
+                              currentBalance: decimalToNumber(purchase.currentBalance)
                             }}
                             profile={profile}
                             compact
@@ -442,6 +563,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                               id: purchase.id,
                               purchaseDate: todayInputValue(purchase.purchaseDate),
                               supplierId: purchase.supplierId,
+                              paidAmount: decimalToNumber(purchase.paidAmount),
                               items: purchase.items.map((item) => ({
                                 productId: item.productId,
                                 kg: decimalToNumber(item.kg),
@@ -454,6 +576,11 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                         </div>
                       </div>
                       <p className="mt-2 text-sm text-muted-foreground">{productNames(purchase.items, productId)}</p>
+                      <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                        <p>Previous Balance: {formatRupee(decimalToNumber(purchase.previousBalance))}</p>
+                        <p>Paid: {formatRupee(displayPaid)}</p>
+                        <p>Current Balance: {formatRupee(decimalToNumber(purchase.currentBalance))}</p>
+                      </div>
                     </div>
                   );
                 })
@@ -487,7 +614,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                   Sales Report
                   {selectedCustomer ? <Badge variant="outline">{selectedCustomer.label}</Badge> : <Badge variant="outline">{range.label}</Badge>}
                 </CardTitle>
-                <SectionReportActions section={salesSection} profile={profile} compact />
+                <SectionReportActions section={salesSection} profile={profile} compact showSummary />
               </CardHeader>
               <CardContent className="space-y-3">
                 {sales.length ? (
@@ -495,6 +622,12 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                     const displayAmount = productId
                       ? sumItemAmounts(filteredItems(sale.items, productId))
                       : decimalToNumber(sale.totalAmount);
+                    const displayReceived = productId
+                      ? (() => {
+                          const saleTotal = decimalToNumber(sale.totalAmount);
+                          return saleTotal ? decimalToNumber(sale.receivedAmount) * (displayAmount / saleTotal) : 0;
+                        })()
+                      : decimalToNumber(sale.receivedAmount);
 
                     return (
                       <div key={sale.id} className="rounded-md border p-3">
@@ -528,6 +661,11 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                           </div>
                         </div>
                         <p className="mt-2 text-sm text-muted-foreground">{productNames(sale.items, productId)}</p>
+                        <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                          <p>Previous Balance: {formatRupee(decimalToNumber(sale.previousBalance))}</p>
+                          <p>Received: {formatRupee(displayReceived)}</p>
+                          <p>Current Balance: {formatRupee(decimalToNumber(sale.currentBalance))}</p>
+                        </div>
                       </div>
                     );
                   })

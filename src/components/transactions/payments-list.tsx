@@ -70,6 +70,7 @@ export function PaymentsList({
   function applyFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const params = new URLSearchParams();
+    params.set("tab", "customer");
     if (range !== DEFAULT_LIST_DATE_RANGE) {
       params.set("range", range);
     }
@@ -86,7 +87,7 @@ export function PaymentsList({
   }
 
   function resetFilter() {
-    router.push("/payment");
+    router.push("/payment?tab=customer");
     setRange(DEFAULT_LIST_DATE_RANGE);
     setFrom(filter.from);
     setTo(filter.to);
@@ -170,7 +171,7 @@ export function PaymentsList({
           )}
         </div>
         <Button asChild size="lg">
-          <Link href="/payment/new">
+          <Link href="/payment/new?tab=customer">
             <Plus className="h-5 w-5" />
             Add Payment
           </Link>
@@ -248,7 +249,7 @@ export function PaymentsList({
           <CardContent className="space-y-4 p-6 text-center">
             <p className="text-sm text-muted-foreground">No payments found for the selected filter.</p>
             <Button asChild>
-              <Link href="/payment/new">
+              <Link href="/payment/new?tab=customer">
                 <Plus className="h-4 w-4" />
                 Record First Payment
               </Link>

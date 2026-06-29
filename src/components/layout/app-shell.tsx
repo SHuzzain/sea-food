@@ -92,6 +92,12 @@ function NewMenu() {
             New Payment
           </Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/payment/new?tab=supplier" className="gap-2">
+            <Truck className="h-4 w-4" />
+            Pay Supplier
+          </Link>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

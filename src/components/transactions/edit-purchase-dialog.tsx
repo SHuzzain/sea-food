@@ -46,6 +46,7 @@ export function EditPurchaseDialog({
   const router = useRouter();
   const [supplierId, setSupplierId] = useState("");
   const [purchaseDate, setPurchaseDate] = useState("");
+  const [paidAmount, setPaidAmount] = useState("");
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
@@ -56,6 +57,7 @@ export function EditPurchaseDialog({
     }
     setSupplierId(purchase.supplierId);
     setPurchaseDate(purchase.purchaseDate);
+    setPaidAmount(String(purchase.paidAmount));
     setLines(toLines(purchase.items));
     setError("");
   }, [purchase, open]);
@@ -84,6 +86,7 @@ export function EditPurchaseDialog({
         const result = await updatePurchase(purchase.id, {
           purchaseDate,
           supplierId,
+          paidAmount: Number(paidAmount || 0),
           items: lines.map((line) => ({
             productId: line.productId,
             kg: Number(line.kg || 0),
@@ -176,6 +179,18 @@ export function EditPurchaseDialog({
             <Plus className="h-4 w-4" />
             Add Item
           </Button>
+          <div className="space-y-2">
+            <Label htmlFor="edit-purchase-paid">Paid Amount</Label>
+            <Input
+              id="edit-purchase-paid"
+              inputMode="decimal"
+              type="number"
+              min="0"
+              step="0.01"
+              value={paidAmount}
+              onChange={(event) => setPaidAmount(event.target.value)}
+            />
+          </div>
           <div className="space-y-2">
             <Label>Total Amount</Label>
             <div className="flex h-10 items-center justify-between rounded-md border bg-muted px-3 font-semibold">

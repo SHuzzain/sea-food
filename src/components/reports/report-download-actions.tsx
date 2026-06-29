@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import type { BusinessProfile } from "@/lib/documents/types";
 import { DEFAULT_BUSINESS_PROFILE } from "@/lib/documents/types";
 import { addPdfHeader } from "@/lib/documents/pdf-header";
-import { downloadBlob } from "@/lib/documents/pdf-utils";
+import { pdfTableOptions } from "@/lib/documents/pdf-table";
+import { downloadBlob, getAutoTableFinalY, pdfMoney } from "@/lib/documents/pdf-utils";
 import { sharePdfWithWhatsApp } from "@/lib/documents/whatsapp";
 
 export type ReportDownloadData = {
@@ -66,10 +67,6 @@ export type ReportDownloadData = {
   }>;
 };
 
-function money(value: number) {
-  return Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function safeFilename(label: string) {
   return `reports-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "download"}`;
 }
@@ -85,12 +82,12 @@ function reportWhatsAppMessage(report: ReportDownloadData, profile: BusinessProf
     lines.push(`Customer: ${report.customerName}`);
   }
   if (!report.customerFiltered) {
-    lines.push(`Purchase: ₹${money(report.summary.purchase)}`);
+    lines.push(`Purchase: ${pdfMoney(report.summary.purchase).replace("INR ", "₹")}`);
   }
   lines.push(
-    `Sales: ₹${money(report.summary.sales)}`,
-    `Collection: ₹${money(report.summary.collection)}`,
-    `Outstanding: ₹${money(report.summary.outstanding)}`
+    `Sales: ${pdfMoney(report.summary.sales).replace("INR ", "₹")}`,
+    `Collection: ${pdfMoney(report.summary.collection).replace("INR ", "₹")}`,
+    `Outstanding: ${pdfMoney(report.summary.outstanding).replace("INR ", "₹")}`
   );
   return lines.join("\n");
 }
@@ -115,47 +112,43 @@ async function buildReportPdf(report: ReportDownloadData, profile: BusinessProfi
   }
 
   const summaryHead = report.customerFiltered
-    ? [["Sales", "Collection", "Outstanding"]]
-    : [["Purchase", "Sales", "Collection", "Outstanding"]];
+    ? ["Sales", "Collection", "Outstanding"]
+    : ["Purchase", "Sales", "Collection", "Outstanding"];
   const summaryBody = report.customerFiltered
-    ? [[money(report.summary.sales), money(report.summary.collection), money(report.summary.outstanding)]]
+    ? [[pdfMoney(report.summary.sales), pdfMoney(report.summary.collection), pdfMoney(report.summary.outstanding)]]
     : [
         [
-          money(report.summary.purchase),
-          money(report.summary.sales),
-          money(report.summary.collection),
-          money(report.summary.outstanding)
+          pdfMoney(report.summary.purchase),
+          pdfMoney(report.summary.sales),
+          pdfMoney(report.summary.collection),
+          pdfMoney(report.summary.outstanding)
         ]
       ];
 
-  autoTable(doc, {
-    startY: metaY + 4,
-    head: summaryHead,
-    body: summaryBody
-  });
+  autoTable(doc, pdfTableOptions(summaryHead, summaryBody, metaY + 4));
 
-  let nextY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 55;
-  const sections = [
+  let nextY = getAutoTableFinalY(doc, 55);
+  const sections: Array<{ title: string; head: string[]; body: string[][] }> = [
     ...(report.statement
       ? [
           {
             title: "Customer Statement",
-            head: [["Date", "Particulars", "Debit", "Credit", "Balance"]],
+            head: ["Date", "Particulars", "Debit", "Credit", "Balance"],
             body: [
-              ["Opening", "Opening Balance", money(report.statement.openingBalance), "-", money(report.statement.openingBalance)],
+              ["Opening", "Opening Balance", pdfMoney(report.statement.openingBalance), "-", pdfMoney(report.statement.openingBalance)],
               ...report.statement.rows.map((row) => [
                 row.date,
                 row.particulars,
-                row.debit ? money(row.debit) : "-",
-                row.credit ? money(row.credit) : "-",
-                money(row.balance)
+                row.debit ? pdfMoney(row.debit) : "-",
+                row.credit ? pdfMoney(row.credit) : "-",
+                pdfMoney(row.balance)
               ]),
               [
                 "Closing",
                 "Closing Balance",
-                money(report.statement.totalSales),
-                money(report.statement.totalPayments),
-                money(report.statement.closingBalance)
+                pdfMoney(report.statement.totalSales),
+                pdfMoney(report.statement.totalPayments),
+                pdfMoney(report.statement.closingBalance)
               ]
             ]
           }
@@ -165,14 +158,14 @@ async function buildReportPdf(report: ReportDownloadData, profile: BusinessProfi
       ? [
           {
             title: "Weekly Sell & Buy Summary",
-            head: [["Date", "Purchase / Buy", "Sales / Sell", "Balance"]],
+            head: ["Date", "Purchase / Buy", "Sales / Sell", "Balance"],
             body: [
-              ...report.weeklySellBuy.map((row) => [row.date, money(row.purchase), money(row.sales), money(row.balance)]),
+              ...report.weeklySellBuy.map((row) => [row.date, pdfMoney(row.purchase), pdfMoney(row.sales), pdfMoney(row.balance)]),
               [
                 "Week Total",
-                money(report.weeklySellBuy.reduce((sum, row) => sum + row.purchase, 0)),
-                money(report.weeklySellBuy.reduce((sum, row) => sum + row.sales, 0)),
-                money(report.weeklySellBuy.reduce((sum, row) => sum + row.balance, 0))
+                pdfMoney(report.weeklySellBuy.reduce((sum, row) => sum + row.purchase, 0)),
+                pdfMoney(report.weeklySellBuy.reduce((sum, row) => sum + row.sales, 0)),
+                pdfMoney(report.weeklySellBuy.reduce((sum, row) => sum + row.balance, 0))
               ]
             ]
           }
@@ -182,25 +175,25 @@ async function buildReportPdf(report: ReportDownloadData, profile: BusinessProfi
       ? [
           {
             title: "Purchase Report",
-            head: [["Date", "Supplier", "Products", "Amount"]],
-            body: report.purchases.map((row) => [row.date, row.supplier, row.products, money(row.amount)])
+            head: ["Date", "Supplier", "Products", "Amount"],
+            body: report.purchases.map((row) => [row.date, row.supplier, row.products, pdfMoney(row.amount)])
           }
         ]
       : []),
     {
       title: "Sales Report",
-      head: [["Date", "Invoice", "Customer", "Products", "Amount"]],
-      body: report.sales.map((row) => [row.date, row.invoiceNo, row.customer, row.products, money(row.amount)])
+      head: ["Date", "Invoice", "Customer", "Products", "Amount"],
+      body: report.sales.map((row) => [row.date, row.invoiceNo, row.customer, row.products, pdfMoney(row.amount)])
     },
     {
       title: "Customer Outstanding Report",
-      head: [["Customer", "Mobile", "Balance"]],
-      body: report.outstandingCustomers.map((row) => [row.customer, row.mobile || "-", money(row.balance)])
+      head: ["Customer", "Mobile", "Balance"],
+      body: report.outstandingCustomers.map((row) => [row.customer, row.mobile || "-", pdfMoney(row.balance)])
     },
     {
       title: "Payment Collection Report",
-      head: [["Date", "Customer", "Mode", "Amount"]],
-      body: report.payments.map((row) => [row.date, row.customer, row.mode, money(row.amount)])
+      head: ["Date", "Customer", "Mode", "Amount"],
+      body: report.payments.map((row) => [row.date, row.customer, row.mode, pdfMoney(row.amount)])
     }
   ];
 
@@ -211,13 +204,9 @@ async function buildReportPdf(report: ReportDownloadData, profile: BusinessProfi
     }
     doc.setFontSize(12);
     doc.text(section.title, 14, nextY + 10);
-    autoTable(doc, {
-      startY: nextY + 14,
-      head: section.head,
-      body: section.body.length ? section.body : [["No records"]],
-      styles: { fontSize: 8 }
-    });
-    nextY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? nextY + 24;
+    const body = section.body.length ? section.body : [["No records", ...section.head.slice(1).map(() => "")]];
+    autoTable(doc, pdfTableOptions(section.head, body, nextY + 14));
+    nextY = getAutoTableFinalY(doc, nextY + 24);
   });
 
   return doc.output("blob");

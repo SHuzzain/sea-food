@@ -10,7 +10,17 @@ export type EditablePurchase = {
   id: string;
   purchaseDate: string;
   supplierId: string;
+  paidAmount: number;
   items: EditablePurchaseItem[];
+};
+
+export type EditableSupplierPayment = {
+  id: string;
+  supplierId: string;
+  paymentDate: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  notes: string;
 };
 
 export type EditableSaleItem = {

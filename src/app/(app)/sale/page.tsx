@@ -92,6 +92,9 @@ export default async function SalePage({ searchParams }: SalePageProps) {
       customerName: sale.customer.name,
       productNames: savedSale.items.map((item) => item.productName).join(", "),
       totalAmount: savedSale.totalAmount,
+      receivedAmount: savedSale.receivedAmount,
+      currentBalance: savedSale.currentBalance,
+      previousBalance: savedSale.previousBalance,
       sale: savedSale,
       editable: {
         id: sale.id,

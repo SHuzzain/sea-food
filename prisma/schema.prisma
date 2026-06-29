@@ -27,6 +27,13 @@ enum LedgerType {
   ADJUSTMENT
 }
 
+enum SupplierLedgerType {
+  OPENING
+  PURCHASE
+  PAYMENT
+  ADJUSTMENT
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -57,14 +64,18 @@ model Customer {
 }
 
 model Supplier {
-  id        String     @id @default(cuid())
-  name      String
-  mobile    String?
-  address   String?
-  status    Status     @default(ACTIVE)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  purchases Purchase[]
+  id                 String                @id @default(cuid())
+  name               String
+  mobile             String?
+  address            String?
+  openingBalance     Decimal               @default(0) @db.Decimal(12, 2)
+  outstandingBalance Decimal               @default(0) @db.Decimal(12, 2)
+  status             Status                @default(ACTIVE)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  purchases          Purchase[]
+  supplierPayments   SupplierPayment[]
+  ledgerEntries      SupplierLedgerEntry[]
 
   @@index([name])
   @@index([mobile])
@@ -86,14 +97,18 @@ model Product {
 }
 
 model Purchase {
-  id           String         @id @default(cuid())
-  purchaseDate DateTime
-  supplierId   String
-  totalAmount  Decimal        @db.Decimal(12, 2)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  supplier     Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  items        PurchaseItem[]
+  id              String                @id @default(cuid())
+  purchaseDate    DateTime
+  supplierId      String
+  previousBalance Decimal               @db.Decimal(12, 2)
+  totalAmount     Decimal               @db.Decimal(12, 2)
+  paidAmount      Decimal               @default(0) @db.Decimal(12, 2)
+  currentBalance  Decimal               @db.Decimal(12, 2)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  supplier        Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  items           PurchaseItem[]
+  ledgerEntries   SupplierLedgerEntry[]
 
   @@index([purchaseDate])
   @@index([supplierId])
@@ -181,6 +196,44 @@ model LedgerEntry {
 
   @@index([entryDate])
   @@index([customerId])
+  @@index([type])
+}
+
+model SupplierPayment {
+  id            String                @id @default(cuid())
+  supplierId    String
+  paymentDate   DateTime
+  amount        Decimal               @db.Decimal(12, 2)
+  paymentMode   PaymentMode
+  notes         String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  supplier      Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  ledgerEntries SupplierLedgerEntry[]
+
+  @@index([paymentDate])
+  @@index([supplierId])
+}
+
+model SupplierLedgerEntry {
+  id                String             @id @default(cuid())
+  supplierId        String
+  entryDate         DateTime
+  type              SupplierLedgerType
+  refNo             String?
+  description       String?
+  debit             Decimal            @default(0) @db.Decimal(12, 2)
+  credit            Decimal            @default(0) @db.Decimal(12, 2)
+  balance           Decimal            @db.Decimal(12, 2)
+  purchaseId        String?
+  supplierPaymentId String?
+  createdAt         DateTime           @default(now())
+  supplier          Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchase          Purchase?          @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  supplierPayment   SupplierPayment?   @relation(fields: [supplierPaymentId], references: [id], onDelete: SetNull)
+
+  @@index([entryDate])
+  @@index([supplierId])
   @@index([type])
 }
 

@@ -33,12 +33,18 @@ export type PurchaseListItem = {
   supplierName: string;
   productNames: string;
   totalAmount: number;
+  paidAmount: number;
+  currentBalance: number;
+  previousBalance: number;
   document: {
     refNo: string;
     purchaseDate: string;
     supplier: { name: string; mobile: string };
     items: { productName: string; kg: number; rate: number; amount: number }[];
+    previousBalance: number;
     totalAmount: number;
+    paidAmount: number;
+    currentBalance: number;
   };
   editable: EditablePurchase;
 };
@@ -195,6 +201,8 @@ export function PurchasesList({
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium">Products</th>
                   <th className="px-4 py-3 text-right font-medium">Amount</th>
+                  <th className="px-4 py-3 text-right font-medium">Paid</th>
+                  <th className="px-4 py-3 text-right font-medium">Balance</th>
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
@@ -208,6 +216,8 @@ export function PurchasesList({
                       {purchase.productNames}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold">{formatRupee(purchase.totalAmount)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">{formatRupee(purchase.paidAmount)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{formatRupee(purchase.currentBalance)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">
                         <PurchaseActions
@@ -249,6 +259,11 @@ export function PurchasesList({
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground">{purchase.productNames}</p>
+                  <div className="grid gap-1 text-xs text-muted-foreground">
+                    <p>Previous Balance: {formatRupee(purchase.previousBalance)}</p>
+                    <p>Paid: {formatRupee(purchase.paidAmount)}</p>
+                    <p>Current Balance: {formatRupee(purchase.currentBalance)}</p>
+                  </div>
                 </CardContent>
               </Card>
             ))}

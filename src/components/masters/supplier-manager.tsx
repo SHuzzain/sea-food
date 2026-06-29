@@ -22,12 +22,15 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import type { PageMeta } from "@/lib/pagination";
+import { formatRupee } from "@/lib/utils";
 
 export type SupplierRow = {
   id: string;
   name: string;
   mobile: string;
   address: string;
+  openingBalance: number;
+  outstandingBalance: number;
   status: "ACTIVE" | "INACTIVE";
 };
 
@@ -35,6 +38,8 @@ const emptySupplier: SupplierPayload = {
   name: "",
   mobile: "",
   address: "",
+  openingBalance: 0,
+  outstandingBalance: 0,
   status: "ACTIVE"
 };
 
@@ -72,6 +77,8 @@ export function SupplierManager({
       name: String(form.get("name") ?? ""),
       mobile: String(form.get("mobile") ?? ""),
       address: String(form.get("address") ?? ""),
+      openingBalance: Number(form.get("openingBalance") ?? 0),
+      outstandingBalance: Number(form.get("outstandingBalance") ?? 0),
       status: String(form.get("status") ?? "ACTIVE") as SupplierPayload["status"]
     };
 
@@ -130,6 +137,30 @@ export function SupplierManager({
                 <Label htmlFor="address">Address</Label>
                 <Textarea id="address" name="address" defaultValue={formDefaults.address ?? ""} />
               </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="openingBalance">Opening Balance</Label>
+                  <Input
+                    id="openingBalance"
+                    name="openingBalance"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={formDefaults.openingBalance ?? 0}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="outstandingBalance">Outstanding Balance</Label>
+                  <Input
+                    id="outstandingBalance"
+                    name="outstandingBalance"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={formDefaults.outstandingBalance ?? formDefaults.openingBalance ?? 0}
+                  />
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
                 <SelectNative id="status" name="status" defaultValue={formDefaults.status ?? "ACTIVE"}>
@@ -155,6 +186,8 @@ export function SupplierManager({
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Mobile</th>
                   <th className="px-4 py-3 font-medium">Address</th>
+                  <th className="px-4 py-3 text-right font-medium">Opening</th>
+                  <th className="px-4 py-3 text-right font-medium">Outstanding</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
@@ -167,6 +200,8 @@ export function SupplierManager({
                     <td className="max-w-[280px] truncate px-4 py-3 text-muted-foreground" title={supplier.address}>
                       {supplier.address || "—"}
                     </td>
+                    <td className="px-4 py-3 text-right">{formatRupee(supplier.openingBalance)}</td>
+                    <td className="px-4 py-3 text-right font-semibold">{formatRupee(supplier.outstandingBalance)}</td>
                     <td className="px-4 py-3">
                       <Badge variant={supplier.status === "ACTIVE" ? "secondary" : "outline"}>{supplier.status}</Badge>
                     </td>
@@ -198,6 +233,16 @@ export function SupplierManager({
                       </div>
                       <p className="mt-1 text-sm text-muted-foreground">{supplier.mobile || "No mobile"}</p>
                       {supplier.address ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{supplier.address}</p> : null}
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="text-muted-foreground">Opening</p>
+                          <p className="font-semibold">{formatRupee(supplier.openingBalance)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Outstanding</p>
+                          <p className="font-semibold">{formatRupee(supplier.outstandingBalance)}</p>
+                        </div>
+                      </div>
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <Button type="button" variant="ghost" size="icon" aria-label="Edit supplier" onClick={() => openEdit(supplier)}>

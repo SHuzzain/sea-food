@@ -4,8 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Filter, Plus } from "lucide-react";
-import type { SavedSale } from "@/app/(app)/sale/actions";
-import { InvoiceActions } from "@/components/transactions/invoice-actions";
+import { SupplierPaymentReceiptActions } from "@/components/transactions/supplier-payment-receipt-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,46 +19,42 @@ import {
   SheetTitle,
   SheetTrigger
 } from "@/components/ui/sheet";
-import type { BusinessProfile } from "@/lib/documents/types";
+import type { BusinessProfile, SupplierPaymentReceiptDocument } from "@/lib/documents/types";
 import type { SelectOption } from "@/lib/options";
-import type { EditableSale } from "@/lib/transactions/types";
+import type { EditableSupplierPayment } from "@/lib/transactions/types";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import type { PageMeta } from "@/lib/pagination";
 import { DEFAULT_LIST_DATE_RANGE, formatRupee } from "@/lib/utils";
 
-export type SaleListItem = {
+export type SupplierPaymentListItem = {
   id: string;
-  invoiceNo: string;
-  invoiceDate: string;
-  customerName: string;
-  productNames: string;
-  totalAmount: number;
-  receivedAmount: number;
-  currentBalance: number;
-  previousBalance: number;
-  sale: SavedSale;
-  editable: EditableSale;
+  refNo: string;
+  paymentDate: string;
+  supplierName: string;
+  paymentMode: string;
+  amount: number;
+  notes: string;
+  receipt: SupplierPaymentReceiptDocument;
+  editable: EditableSupplierPayment;
 };
 
 type FilterState = {
   range: string;
   from: string;
   to: string;
-  customer: string;
+  supplier: string;
 };
 
-export function SalesList({
-  sales,
-  customers,
-  products,
+export function SupplierPaymentsList({
+  payments,
+  suppliers,
   profile,
   filter,
   filterLabel,
   pagination
 }: {
-  sales: SaleListItem[];
-  customers: SelectOption[];
-  products: SelectOption[];
+  payments: SupplierPaymentListItem[];
+  suppliers: SelectOption[];
   profile: BusinessProfile;
   filter: FilterState;
   filterLabel: string;
@@ -70,11 +65,12 @@ export function SalesList({
   const [range, setRange] = useState(filter.range);
   const [from, setFrom] = useState(filter.from);
   const [to, setTo] = useState(filter.to);
-  const [customer, setCustomer] = useState(filter.customer);
+  const [supplier, setSupplier] = useState(filter.supplier);
 
   function applyFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const params = new URLSearchParams();
+    params.set("tab", "supplier");
     if (range !== DEFAULT_LIST_DATE_RANGE) {
       params.set("range", range);
     }
@@ -82,24 +78,24 @@ export function SalesList({
       params.set("from", from);
       params.set("to", to);
     }
-    if (customer) {
-      params.set("customer", customer);
+    if (supplier) {
+      params.set("supplier", supplier);
     }
     params.delete("page");
-    router.push(`/sale?${params.toString()}`);
+    router.push(`/payment?${params.toString()}`);
     setOpen(false);
   }
 
   function resetFilter() {
-    router.push("/sale");
+    router.push("/payment?tab=supplier");
     setRange(DEFAULT_LIST_DATE_RANGE);
     setFrom(filter.from);
     setTo(filter.to);
-    setCustomer("");
+    setSupplier("");
     setOpen(false);
   }
 
-  const hasActiveFilter = filter.range !== DEFAULT_LIST_DATE_RANGE || filter.customer;
+  const hasActiveFilter = filter.range !== DEFAULT_LIST_DATE_RANGE || filter.supplier;
 
   return (
     <div className="space-y-4">
@@ -114,13 +110,13 @@ export function SalesList({
             </SheetTrigger>
             <SheetContent side="right" className="overflow-y-auto">
               <SheetHeader>
-                <SheetTitle>Filter Sales</SheetTitle>
-                <SheetDescription>Filter by date range and customer.</SheetDescription>
+                <SheetTitle>Filter Supplier Payments</SheetTitle>
+                <SheetDescription>Filter by date range and supplier.</SheetDescription>
               </SheetHeader>
               <form className="mt-2 space-y-4" onSubmit={applyFilter}>
                 <div className="space-y-2">
-                  <Label htmlFor="sale-range">Date Range</Label>
-                  <SelectNative id="sale-range" value={range} onChange={(event) => setRange(event.target.value)}>
+                  <Label htmlFor="supplier-payment-range">Date Range</Label>
+                  <SelectNative id="supplier-payment-range" value={range} onChange={(event) => setRange(event.target.value)}>
                     <option value="all">All Time</option>
                     <option value="today">Today</option>
                     <option value="week">This Week</option>
@@ -131,20 +127,20 @@ export function SalesList({
                 {range === "custom" ? (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="sale-from">From</Label>
-                      <Input id="sale-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                      <Label htmlFor="supplier-payment-from">From</Label>
+                      <Input id="supplier-payment-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="sale-to">To</Label>
-                      <Input id="sale-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                      <Label htmlFor="supplier-payment-to">To</Label>
+                      <Input id="supplier-payment-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
                     </div>
                   </div>
                 ) : null}
                 <div className="space-y-2">
-                  <Label htmlFor="sale-customer">Customer</Label>
-                  <SelectNative id="sale-customer" value={customer} onChange={(event) => setCustomer(event.target.value)}>
-                    <option value="">All Customers</option>
-                    {customers.map((option) => (
+                  <Label htmlFor="supplier-payment-supplier">Supplier</Label>
+                  <SelectNative id="supplier-payment-supplier" value={supplier} onChange={(event) => setSupplier(event.target.value)}>
+                    <option value="">All Suppliers</option>
+                    {suppliers.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.label}
                       </option>
@@ -166,8 +162,8 @@ export function SalesList({
           {hasActiveFilter ? (
             <>
               <Badge variant="secondary">{filterLabel}</Badge>
-              {filter.customer ? (
-                <Badge variant="secondary">{customers.find((item) => item.id === filter.customer)?.label ?? "Customer"}</Badge>
+              {filter.supplier ? (
+                <Badge variant="secondary">{suppliers.find((item) => item.id === filter.supplier)?.label ?? "Supplier"}</Badge>
               ) : null}
             </>
           ) : (
@@ -175,50 +171,43 @@ export function SalesList({
           )}
         </div>
         <Button asChild size="lg">
-          <Link href="/sale/new">
+          <Link href="/payment/new?tab=supplier">
             <Plus className="h-5 w-5" />
-            Add Sale
+            Pay Supplier
           </Link>
         </Button>
       </div>
 
-      {sales.length ? (
+      {payments.length ? (
         <>
           <div className="hidden overflow-hidden rounded-md border md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/60 text-left text-xs text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">Invoice</th>
-                  <th className="px-4 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium">Reference</th>
+                  <th className="px-4 py-3 font-medium">Supplier</th>
                   <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Products</th>
+                  <th className="px-4 py-3 font-medium">Mode</th>
                   <th className="px-4 py-3 text-right font-medium">Amount</th>
-                  <th className="px-4 py-3 text-right font-medium">Received</th>
-                  <th className="px-4 py-3 text-right font-medium">Balance</th>
                   <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {sales.map((sale) => (
-                  <tr key={sale.id} className="border-b last:border-b-0">
-                    <td className="px-4 py-3 font-medium">{sale.invoiceNo}</td>
-                    <td className="px-4 py-3">{sale.customerName}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{sale.invoiceDate}</td>
-                    <td className="max-w-[240px] truncate px-4 py-3 text-muted-foreground" title={sale.productNames}>
-                      {sale.productNames}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold">{formatRupee(sale.totalAmount)}</td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">{formatRupee(sale.receivedAmount)}</td>
-                    <td className="px-4 py-3 text-right font-medium">{formatRupee(sale.currentBalance)}</td>
+                {payments.map((payment) => (
+                  <tr key={payment.id} className="border-b last:border-b-0">
+                    <td className="px-4 py-3 font-medium">{payment.refNo}</td>
+                    <td className="px-4 py-3">{payment.supplierName}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{payment.paymentDate}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{payment.paymentMode}</td>
+                    <td className="px-4 py-3 text-right font-semibold">{formatRupee(payment.amount)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">
-                        <InvoiceActions
-                          sale={sale.sale}
-                          profile={profile}
+                        <SupplierPaymentReceiptActions
+                          receipt={payment.receipt}
                           compact
-                          editable={sale.editable}
-                          customers={customers}
-                          products={products}
+                          profile={profile}
+                          editable={payment.editable}
+                          suppliers={suppliers}
                         />
                       </div>
                     </td>
@@ -229,33 +218,27 @@ export function SalesList({
           </div>
 
           <div className="space-y-3 md:hidden">
-            {sales.map((sale) => (
-              <Card key={sale.id}>
+            {payments.map((payment) => (
+              <Card key={payment.id}>
                 <CardContent className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium">{sale.invoiceNo}</p>
-                      <p className="text-sm text-muted-foreground">{sale.customerName}</p>
-                      <p className="text-xs text-muted-foreground">{sale.invoiceDate}</p>
+                      <p className="font-medium">{payment.supplierName}</p>
+                      <p className="text-sm text-muted-foreground">{payment.paymentMode}</p>
+                      <p className="text-xs text-muted-foreground">{payment.paymentDate}</p>
                     </div>
                     <div className="flex items-start gap-1">
-                      <p className="font-semibold">{formatRupee(sale.totalAmount)}</p>
-                      <InvoiceActions
-                        sale={sale.sale}
-                        profile={profile}
+                      <p className="font-semibold">{formatRupee(payment.amount)}</p>
+                      <SupplierPaymentReceiptActions
+                        receipt={payment.receipt}
                         compact
-                        editable={sale.editable}
-                        customers={customers}
-                        products={products}
+                        profile={profile}
+                        editable={payment.editable}
+                        suppliers={suppliers}
                       />
                     </div>
                   </div>
-                  <p className="text-sm text-muted-foreground">{sale.productNames}</p>
-                  <div className="grid gap-1 text-xs text-muted-foreground">
-                    <p>Previous Balance: {formatRupee(sale.previousBalance)}</p>
-                    <p>Received: {formatRupee(sale.receivedAmount)}</p>
-                    <p>Current Balance: {formatRupee(sale.currentBalance)}</p>
-                  </div>
+                  {payment.notes ? <p className="text-sm text-muted-foreground">{payment.notes}</p> : null}
                 </CardContent>
               </Card>
             ))}
@@ -264,11 +247,11 @@ export function SalesList({
       ) : (
         <Card>
           <CardContent className="space-y-4 p-6 text-center">
-            <p className="text-sm text-muted-foreground">No sales found for the selected filter.</p>
+            <p className="text-sm text-muted-foreground">No supplier payments found for the selected filter.</p>
             <Button asChild>
-              <Link href="/sale/new">
+              <Link href="/payment/new?tab=supplier">
                 <Plus className="h-4 w-4" />
-                Create First Sale
+                Record First Payment
               </Link>
             </Button>
           </CardContent>

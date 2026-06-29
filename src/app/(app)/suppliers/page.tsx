@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { SupplierManager, type SupplierRow } from "@/components/masters/supplier-manager";
 import { getCachedSuppliersPage } from "@/lib/cache/queries";
 import { parsePageParam } from "@/lib/pagination";
+import { decimalToNumber } from "@/lib/utils";
 
 type SuppliersPageProps = {
   searchParams: Promise<{
@@ -21,6 +22,8 @@ export default async function SuppliersPage({ searchParams }: SuppliersPageProps
     name: supplier.name,
     mobile: supplier.mobile ?? "",
     address: supplier.address ?? "",
+    openingBalance: decimalToNumber(supplier.openingBalance),
+    outstandingBalance: decimalToNumber(supplier.outstandingBalance),
     status: supplier.status
   }));
 

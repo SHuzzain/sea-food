@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PaymentMode } from "@prisma/client";
 import { Save } from "lucide-react";
-import { updatePayment } from "@/app/(app)/payment/actions";
+import { updateSupplierPayment } from "@/app/(app)/payment/supplier-actions";
 import { SearchableSelect } from "@/components/forms/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,21 +13,21 @@ import { Label } from "@/components/ui/label";
 import { SelectNative } from "@/components/ui/select-native";
 import { Textarea } from "@/components/ui/textarea";
 import type { SelectOption } from "@/lib/options";
-import type { EditablePayment } from "@/lib/transactions/types";
+import type { EditableSupplierPayment } from "@/lib/transactions/types";
 
-export function EditPaymentDialog({
+export function EditSupplierPaymentDialog({
   open,
   onOpenChange,
   payment,
-  customers
+  suppliers
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  payment: EditablePayment | null;
-  customers: SelectOption[];
+  payment: EditableSupplierPayment | null;
+  suppliers: SelectOption[];
 }) {
   const router = useRouter();
-  const [customerId, setCustomerId] = useState("");
+  const [supplierId, setSupplierId] = useState("");
   const [paymentDate, setPaymentDate] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
@@ -39,7 +39,7 @@ export function EditPaymentDialog({
     if (!payment || !open) {
       return;
     }
-    setCustomerId(payment.customerId);
+    setSupplierId(payment.supplierId);
     setPaymentDate(payment.paymentDate);
     setAmount(String(payment.amount));
     setPaymentMode(payment.paymentMode);
@@ -55,8 +55,8 @@ export function EditPaymentDialog({
     setError("");
     startTransition(() => {
       void (async () => {
-        const result = await updatePayment(payment.id, {
-          customerId,
+        const result = await updateSupplierPayment(payment.id, {
+          supplierId,
           paymentDate,
           amount: Number(amount || 0),
           paymentMode,
@@ -76,39 +76,49 @@ export function EditPaymentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit Payment</DialogTitle>
+          <DialogTitle>Edit Supplier Payment</DialogTitle>
         </DialogHeader>
         <form className="space-y-4" onSubmit={submit}>
-          <SearchableSelect
-            label="Customer"
-            options={customers}
-            value={customerId}
-            onChange={setCustomerId}
-            placeholder="Search customer name"
-            showBalance
-          />
+          <SearchableSelect label="Supplier" options={suppliers} value={supplierId} onChange={setSupplierId} placeholder="Search supplier" />
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="edit-payment-date">Payment Date</Label>
-              <Input id="edit-payment-date" type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
+              <Label htmlFor="edit-supplier-payment-date">Payment Date</Label>
+              <Input
+                id="edit-supplier-payment-date"
+                type="date"
+                value={paymentDate}
+                onChange={(event) => setPaymentDate(event.target.value)}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-payment-amount">Amount</Label>
-              <Input id="edit-payment-amount" inputMode="decimal" type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} />
+              <Label htmlFor="edit-supplier-payment-mode">Payment Mode</Label>
+              <SelectNative
+                id="edit-supplier-payment-mode"
+                value={paymentMode}
+                onChange={(event) => setPaymentMode(event.target.value as PaymentMode)}
+              >
+                <option value={PaymentMode.CASH}>Cash</option>
+                <option value={PaymentMode.UPI}>UPI</option>
+                <option value={PaymentMode.BANK}>Bank</option>
+                <option value={PaymentMode.CHEQUE}>Cheque</option>
+              </SelectNative>
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-payment-mode">Payment Mode</Label>
-            <SelectNative id="edit-payment-mode" value={paymentMode} onChange={(event) => setPaymentMode(event.target.value as PaymentMode)}>
-              <option value={PaymentMode.CASH}>Cash</option>
-              <option value={PaymentMode.UPI}>UPI</option>
-              <option value={PaymentMode.BANK}>Bank</option>
-              <option value={PaymentMode.CHEQUE}>Cheque</option>
-            </SelectNative>
+            <Label htmlFor="edit-supplier-payment-amount">Amount</Label>
+            <Input
+              id="edit-supplier-payment-amount"
+              inputMode="decimal"
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-payment-notes">Notes</Label>
-            <Textarea id="edit-payment-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+            <Label htmlFor="edit-supplier-payment-notes">Notes</Label>
+            <Textarea id="edit-supplier-payment-notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
           </div>
           {error ? <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
           <Button className="w-full" size="lg" disabled={pending}>

@@ -66,7 +66,47 @@ export type PurchaseDocument = {
     rate: number;
     amount: number;
   }[];
+  previousBalance: number;
   totalAmount: number;
+  paidAmount: number;
+  currentBalance: number;
+};
+
+export type SupplierPaymentReceiptDocument = {
+  refNo: string;
+  paymentDate: string;
+  supplier: {
+    name: string;
+    mobile: string;
+  };
+  amount: number;
+  paymentMode: string;
+  notes: string;
+  previousBalance: number;
+  currentBalance: number;
+};
+
+export type SupplierStatementRow = {
+  date: string;
+  particulars: string;
+  debit: number;
+  credit: number;
+  balance: number;
+};
+
+export type SupplierStatementDocument = {
+  supplier: {
+    name: string;
+    mobile: string;
+  };
+  periodLabel: string;
+  from: string;
+  to: string;
+  openingBalance: number;
+  closingBalance: number;
+  totalPurchases: number;
+  totalPayments: number;
+  rows: SupplierStatementRow[];
 };
 
 export type CustomerStatementDocument = {

@@ -1,19 +1,19 @@
-import type { BusinessProfile, CustomerStatementDocument } from "@/lib/documents/types";
+import type { BusinessProfile, SupplierStatementDocument } from "@/lib/documents/types";
 import { addPdfHeader } from "@/lib/documents/pdf-header";
 import { pdfTableOptions } from "@/lib/documents/pdf-table";
 import { drawPdfBalanceFooter, getAutoTableFinalY, pdfMoney } from "@/lib/documents/pdf-utils";
 
-export async function buildCustomerStatementPdf(statement: CustomerStatementDocument, profile: BusinessProfile) {
+export async function buildSupplierStatementPdf(statement: SupplierStatementDocument, profile: BusinessProfile) {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
   const doc = new jsPDF();
   const startY = await addPdfHeader(doc, profile);
 
   doc.setFontSize(14);
-  doc.text("Customer Statement", 14, startY);
+  doc.text("Supplier Statement", 14, startY);
   doc.setFontSize(10);
-  doc.text(`Customer: ${statement.customer.name}`, 14, startY + 10);
-  doc.text(`Mobile: ${statement.customer.mobile || "-"}`, 14, startY + 16);
+  doc.text(`Supplier: ${statement.supplier.name}`, 14, startY + 10);
+  doc.text(`Mobile: ${statement.supplier.mobile || "-"}`, 14, startY + 16);
   doc.text(`Period: ${statement.from} to ${statement.to}`, 14, startY + 22);
   doc.text(`Opening Balance: ${pdfMoney(statement.openingBalance)}`, 14, startY + 30);
 
@@ -31,7 +31,7 @@ export async function buildCustomerStatementPdf(statement: CustomerStatementDocu
   autoTable(doc, pdfTableOptions(head, body, startY + 36));
 
   drawPdfBalanceFooter(doc, getAutoTableFinalY(doc, startY + 44), [
-    ["Total Sales", pdfMoney(statement.totalSales)],
+    ["Total Purchases", pdfMoney(statement.totalPurchases)],
     ["Total Payments", pdfMoney(statement.totalPayments)],
     ["Closing Balance", pdfMoney(statement.closingBalance)]
   ]);
@@ -39,13 +39,13 @@ export async function buildCustomerStatementPdf(statement: CustomerStatementDocu
   return doc.output("blob");
 }
 
-export function customerStatementWhatsAppMessage(statement: CustomerStatementDocument, profile: BusinessProfile) {
+export function supplierStatementWhatsAppMessage(statement: SupplierStatementDocument, profile: BusinessProfile) {
   return [
     profile.businessName,
-    "Customer Statement",
-    `Customer: ${statement.customer.name}`,
+    "Supplier Statement",
+    `Supplier: ${statement.supplier.name}`,
     `Period: ${statement.from} to ${statement.to}`,
-    `Total Sales: ${pdfMoney(statement.totalSales).replace("INR ", "₹")}`,
+    `Total Purchases: ${pdfMoney(statement.totalPurchases).replace("INR ", "₹")}`,
     `Total Payments: ${pdfMoney(statement.totalPayments).replace("INR ", "₹")}`,
     `Closing Balance: ${pdfMoney(statement.closingBalance).replace("INR ", "₹")}`
   ].join("\n");

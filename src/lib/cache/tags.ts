@@ -5,5 +5,6 @@ export const CACHE_TAGS = {
   sales: "sales",
   purchases: "purchases",
   payments: "payments",
+  supplierPayments: "supplier-payments",
   options: "options"
 } as const;
