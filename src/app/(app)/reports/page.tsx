@@ -332,7 +332,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             customer={params.customer ?? ""}
             supplier={params.supplier ?? ""}
             product={params.product ?? ""}
-            date={params.from ?? params.to ?? todayInputValue()}
+            from={params.from ?? todayInputValue()}
+            to={params.to ?? params.from ?? todayInputValue()}
             customers={customers}
             suppliers={suppliers}
             products={products}

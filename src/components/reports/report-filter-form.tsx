@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Filter } from "lucide-react";
 import type { ReportTab } from "@/lib/reports/tabs";
@@ -11,13 +11,25 @@ import { SelectNative } from "@/components/ui/select-native";
 import type { SelectOption } from "@/lib/options";
 import { DEFAULT_DATE_RANGE } from "@/lib/utils";
 
+function FilterField({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-2 lg:min-w-[11rem] lg:flex-1">
+      <Label htmlFor={htmlFor} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
 export function ReportFilterForm({
   tab,
   range,
   customer,
   supplier,
   product,
-  date,
+  from,
+  to,
   customers,
   suppliers,
   products
@@ -27,7 +39,8 @@ export function ReportFilterForm({
   customer: string;
   supplier: string;
   product: string;
-  date: string;
+  from: string;
+  to: string;
   customers: SelectOption[];
   suppliers: SelectOption[];
   products: SelectOption[];
@@ -38,6 +51,7 @@ export function ReportFilterForm({
   const showCustomer = tab === "sales" || tab === "outstanding" || tab === "payment";
   const showSupplier = tab === "purchase";
   const showProduct = tab === "purchase" || tab === "sales";
+  const showCustomDates = showDateRange && selectedRange === "custom";
 
   function applyFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,9 +63,10 @@ export function ReportFilterForm({
       const nextRange = String(formData.get("range") ?? DEFAULT_DATE_RANGE);
       params.set("range", nextRange);
       if (nextRange === "custom") {
-        const customDate = String(formData.get("date") ?? date);
-        params.set("from", customDate);
-        params.set("to", customDate);
+        const customFrom = String(formData.get("from") ?? from);
+        const customTo = String(formData.get("to") ?? to);
+        params.set("from", customFrom);
+        params.set("to", customTo);
       }
     }
 
@@ -79,70 +94,75 @@ export function ReportFilterForm({
     router.push(`/reports?${params.toString()}`);
   }
 
-  const fieldCount =
-    (showDateRange ? 1 : 0) +
-    (showCustomer ? 1 : 0) +
-    (showSupplier ? 1 : 0) +
-    (showProduct ? 1 : 0) +
-    (showDateRange && selectedRange === "custom" ? 1 : 0);
-
   return (
-    <form
-      className={`grid gap-3 sm:grid-cols-2 ${
-        fieldCount >= 4 ? "lg:grid-cols-3 xl:grid-cols-[160px_1fr_1fr_1fr_auto]" : "lg:grid-cols-3 xl:grid-cols-[160px_1fr_1fr_auto]"
-      }`}
-      onSubmit={applyFilter}
-    >
-      {showDateRange ? (
-        <SelectNative name="range" value={selectedRange} onChange={(event) => setSelectedRange(event.target.value)}>
-          <option value="today">Today</option>
-          <option value="week">This Week</option>
-          <option value="month">This Month</option>
-          <option value="custom">Custom Date</option>
-        </SelectNative>
-      ) : null}
-      {showCustomer ? (
-        <SelectNative name="customer" defaultValue={customer}>
-          <option value="">All Customers</option>
-          {customers.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </SelectNative>
-      ) : null}
-      {showSupplier ? (
-        <SelectNative name="supplier" defaultValue={supplier}>
-          <option value="">All Suppliers</option>
-          {suppliers.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </SelectNative>
-      ) : null}
-      {showProduct ? (
-        <SelectNative name="product" defaultValue={product}>
-          <option value="">All Products</option>
-          {products.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </SelectNative>
-      ) : null}
-      {showDateRange && selectedRange === "custom" ? (
-        <div className="space-y-2">
-          <Label htmlFor="report-date" className="sr-only">
-            Date
-          </Label>
-          <Input id="report-date" name="date" type="date" defaultValue={date} required />
-        </div>
-      ) : null}
-      <Button type="submit" size="lg" className="sm:col-span-2 lg:col-span-1">
-        <Filter className="h-4 w-4" />
-        Apply
-      </Button>
+    <form onSubmit={applyFilter}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
+        {showDateRange ? (
+          <FilterField label="Date Range" htmlFor="report-range">
+            <SelectNative id="report-range" name="range" value={selectedRange} onChange={(event) => setSelectedRange(event.target.value)}>
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="custom">Custom Date</option>
+            </SelectNative>
+          </FilterField>
+        ) : null}
+
+        {showCustomer ? (
+          <FilterField label="Customer" htmlFor="report-customer">
+            <SelectNative id="report-customer" name="customer" defaultValue={customer}>
+              <option value="">All Customers</option>
+              {customers.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </SelectNative>
+          </FilterField>
+        ) : null}
+
+        {showSupplier ? (
+          <FilterField label="Supplier" htmlFor="report-supplier">
+            <SelectNative id="report-supplier" name="supplier" defaultValue={supplier}>
+              <option value="">All Suppliers</option>
+              {suppliers.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </SelectNative>
+          </FilterField>
+        ) : null}
+
+        {showProduct ? (
+          <FilterField label="Product" htmlFor="report-product">
+            <SelectNative id="report-product" name="product" defaultValue={product}>
+              <option value="">All Products</option>
+              {products.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </SelectNative>
+          </FilterField>
+        ) : null}
+
+        {showCustomDates ? (
+          <>
+            <FilterField label="From" htmlFor="report-from">
+              <Input id="report-from" name="from" type="date" defaultValue={from} required />
+            </FilterField>
+            <FilterField label="To" htmlFor="report-to">
+              <Input id="report-to" name="to" type="date" defaultValue={to} required />
+            </FilterField>
+          </>
+        ) : null}
+
+        <Button type="submit" size="lg" className="w-full shrink-0 lg:w-auto lg:min-w-[7.5rem]">
+          <Filter className="h-4 w-4" />
+          Apply
+        </Button>
+      </div>
     </form>
   );
 }

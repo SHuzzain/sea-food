@@ -9,10 +9,13 @@ function appendDateParams(params: URLSearchParams, searchParams: URLSearchParams
   const range = searchParams.get("range") ?? DEFAULT_DATE_RANGE;
   params.set("range", range);
   if (range === "custom") {
-    const from = searchParams.get("from") ?? searchParams.get("to");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
     if (from) {
       params.set("from", from);
-      params.set("to", from);
+    }
+    if (to) {
+      params.set("to", to);
     }
   }
 }
