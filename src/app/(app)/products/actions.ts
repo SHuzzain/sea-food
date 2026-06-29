@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { invalidateProductsCache } from "@/lib/cache/invalidate";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -30,6 +31,7 @@ export async function createProduct(payload: ProductPayload) {
     select: { id: true, name: true, unit: true }
   });
 
+  invalidateProductsCache();
   revalidatePath("/products");
   return { ok: true, product: { id: product.id, label: product.name, meta: product.unit, unit: product.unit } };
 }
@@ -41,6 +43,7 @@ export async function updateProduct(id: string, payload: ProductPayload) {
     return { ok: false, error: "Product name is required." };
   }
   await prisma.product.update({ where: { id }, data });
+  invalidateProductsCache();
   revalidatePath("/products");
   return { ok: true };
 }
@@ -52,6 +55,7 @@ export async function deleteProduct(id: string) {
   } catch {
     await prisma.product.update({ where: { id }, data: { status: "INACTIVE" } });
   }
+  invalidateProductsCache();
   revalidatePath("/products");
   return { ok: true };
 }

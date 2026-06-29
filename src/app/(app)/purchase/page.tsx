@@ -1,54 +1,117 @@
-import { PurchaseForm } from "@/components/transactions/purchase-form";
-import { Card, CardContent } from "@/components/ui/card";
+import { Suspense } from "react";
+import { PurchasesList } from "@/components/transactions/purchases-list";
+import { getCachedPurchasesPage } from "@/lib/cache/queries";
+import { getBusinessProfile } from "@/lib/business-profile";
 import { getProductOptions, getSupplierOptions } from "@/lib/options";
-import { prisma } from "@/lib/prisma";
-import { decimalToNumber, formatRupee, todayInputValue } from "@/lib/utils";
+import { parsePageParam } from "@/lib/pagination";
+import {
+  dateRangeFromFilter,
+  decimalToNumber,
+  DEFAULT_LIST_DATE_RANGE,
+  formatDisplayDate,
+  todayInputValue
+} from "@/lib/utils";
 
-export default async function PurchasePage() {
-  const [suppliers, products, recentPurchases] = await Promise.all([
+type PurchasePageProps = {
+  searchParams: Promise<{
+    page?: string;
+    range?: string;
+    from?: string;
+    to?: string;
+    supplier?: string;
+  }>;
+};
+
+function toPurchaseRef(purchaseDate: Date | string, id: string) {
+  const datePart = todayInputValue(purchaseDate).replace(/-/g, "");
+  return `PUR-${datePart}-${id.slice(-6).toUpperCase()}`;
+}
+
+export default async function PurchasePage({ searchParams }: PurchasePageProps) {
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const range = dateRangeFromFilter(params, DEFAULT_LIST_DATE_RANGE);
+  const supplierId = params.supplier?.trim() || undefined;
+  const today = todayInputValue();
+
+  const [suppliers, products, profile, purchasesResult] = await Promise.all([
     getSupplierOptions(),
     getProductOptions(),
-    prisma.purchase.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: { supplier: true, items: { include: { product: true } } }
-    })
+    getBusinessProfile(),
+    getCachedPurchasesPage(
+      {
+        page,
+        rangeKey: params.range ?? DEFAULT_LIST_DATE_RANGE,
+        from: params.from,
+        to: params.to,
+        supplierId
+      },
+      range
+    )
   ]);
+
+  const purchaseItems = purchasesResult.items.map((purchase) => {
+    const refNo = toPurchaseRef(purchase.purchaseDate, purchase.id);
+    const purchaseDate = formatDisplayDate(purchase.purchaseDate);
+    const items = purchase.items.map((item) => ({
+      productName: item.product.name,
+      kg: decimalToNumber(item.kg),
+      rate: decimalToNumber(item.rate),
+      amount: decimalToNumber(item.amount)
+    }));
+
+    return {
+      id: purchase.id,
+      refNo,
+      purchaseDate,
+      supplierName: purchase.supplier.name,
+      productNames: items.map((item) => item.productName).join(", "),
+      totalAmount: decimalToNumber(purchase.totalAmount),
+      document: {
+        refNo,
+        purchaseDate,
+        supplier: {
+          name: purchase.supplier.name,
+          mobile: purchase.supplier.mobile ?? ""
+        },
+        items,
+        totalAmount: decimalToNumber(purchase.totalAmount)
+      },
+      editable: {
+        id: purchase.id,
+        purchaseDate: todayInputValue(purchase.purchaseDate),
+        supplierId: purchase.supplierId,
+        items: purchase.items.map((item) => ({
+          productId: item.productId,
+          kg: decimalToNumber(item.kg),
+          rate: decimalToNumber(item.rate)
+        }))
+      }
+    };
+  });
 
   return (
     <div className="app-container py-5 lg:py-8">
       <div className="mb-5">
-        <h1 className="text-2xl font-semibold tracking-normal">Purchase</h1>
-        <p className="text-sm text-muted-foreground">Enter supplier purchases with multiple fish items.</p>
+        <h1 className="text-2xl font-semibold tracking-normal">Purchases</h1>
+        <p className="text-sm text-muted-foreground">View supplier purchases, filter by date, and share receipts.</p>
       </div>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <PurchaseForm suppliers={suppliers} products={products} today={todayInputValue()} />
-        <aside className="space-y-3">
-          <h2 className="font-semibold">Recent Purchases</h2>
-          {recentPurchases.length ? (
-            recentPurchases.map((purchase) => (
-              <Card key={purchase.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{purchase.supplier.name}</p>
-                      <p className="text-xs text-muted-foreground">{purchase.purchaseDate.toLocaleDateString("en-IN")}</p>
-                    </div>
-                    <p className="font-semibold">{formatRupee(decimalToNumber(purchase.totalAmount))}</p>
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {purchase.items.map((item) => item.product.name).join(", ")}
-                  </p>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">No purchases yet.</CardContent>
-            </Card>
-          )}
-        </aside>
-      </div>
+      <Suspense fallback={<div className="text-sm text-muted-foreground">Loading purchases...</div>}>
+        <PurchasesList
+          purchases={purchaseItems}
+          suppliers={suppliers}
+          products={products}
+          profile={profile}
+          filter={{
+            range: params.range ?? DEFAULT_LIST_DATE_RANGE,
+            from: params.from ?? today,
+            to: params.to ?? today,
+            supplier: params.supplier ?? ""
+          }}
+          filterLabel={range.label}
+          pagination={purchasesResult.pagination}
+        />
+      </Suspense>
     </div>
   );
 }

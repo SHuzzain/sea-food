@@ -1,12 +1,22 @@
+import { Suspense } from "react";
 import { SupplierManager, type SupplierRow } from "@/components/masters/supplier-manager";
-import { prisma } from "@/lib/prisma";
+import { getCachedSuppliersPage } from "@/lib/cache/queries";
+import { parsePageParam } from "@/lib/pagination";
 
-export default async function SuppliersPage() {
-  const suppliers = await prisma.supplier.findMany({
-    orderBy: { name: "asc" }
-  });
+type SuppliersPageProps = {
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+  }>;
+};
 
-  const rows: SupplierRow[] = suppliers.map((supplier) => ({
+export default async function SuppliersPage({ searchParams }: SuppliersPageProps) {
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const query = params.q?.trim() ?? "";
+  const { items, pagination } = await getCachedSuppliersPage(page, query);
+
+  const rows: SupplierRow[] = items.map((supplier) => ({
     id: supplier.id,
     name: supplier.name,
     mobile: supplier.mobile ?? "",
@@ -20,7 +30,9 @@ export default async function SuppliersPage() {
         <h1 className="text-2xl font-semibold tracking-normal">Suppliers</h1>
         <p className="text-sm text-muted-foreground">Create, edit, delete and search suppliers.</p>
       </div>
-      <SupplierManager suppliers={rows} />
+      <Suspense fallback={<div className="text-sm text-muted-foreground">Loading suppliers...</div>}>
+        <SupplierManager suppliers={rows} pagination={pagination} query={query} />
+      </Suspense>
     </div>
   );
 }

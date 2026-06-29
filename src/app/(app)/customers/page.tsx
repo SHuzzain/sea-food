@@ -1,13 +1,23 @@
+import { Suspense } from "react";
 import { CustomerManager, type CustomerRow } from "@/components/masters/customer-manager";
-import { prisma } from "@/lib/prisma";
+import { getCachedCustomersPage } from "@/lib/cache/queries";
+import { parsePageParam } from "@/lib/pagination";
 import { decimalToNumber } from "@/lib/utils";
 
-export default async function CustomersPage() {
-  const customers = await prisma.customer.findMany({
-    orderBy: { name: "asc" }
-  });
+type CustomersPageProps = {
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+  }>;
+};
 
-  const rows: CustomerRow[] = customers.map((customer) => ({
+export default async function CustomersPage({ searchParams }: CustomersPageProps) {
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const query = params.q?.trim() ?? "";
+  const { items, pagination } = await getCachedCustomersPage(page, query);
+
+  const rows: CustomerRow[] = items.map((customer) => ({
     id: customer.id,
     name: customer.name,
     mobile: customer.mobile ?? "",
@@ -23,7 +33,9 @@ export default async function CustomersPage() {
         <h1 className="text-2xl font-semibold tracking-normal">Customers</h1>
         <p className="text-sm text-muted-foreground">Create, edit, delete and search customer accounts.</p>
       </div>
-      <CustomerManager customers={rows} />
+      <Suspense fallback={<div className="text-sm text-muted-foreground">Loading customers...</div>}>
+        <CustomerManager customers={rows} pagination={pagination} query={query} />
+      </Suspense>
     </div>
   );
 }

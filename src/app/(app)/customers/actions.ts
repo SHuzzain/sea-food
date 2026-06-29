@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { invalidateCustomersCache } from "@/lib/cache/invalidate";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { decimalToNumber, toMoney } from "@/lib/utils";
@@ -58,6 +59,7 @@ export async function createCustomer(payload: CustomerPayload) {
     select: { id: true, name: true, mobile: true, outstandingBalance: true }
   });
 
+  invalidateCustomersCache();
   revalidatePath("/customers");
   return {
     ok: true,
@@ -94,6 +96,7 @@ export async function updateCustomer(id: string, payload: CustomerPayload) {
     }
   });
 
+  invalidateCustomersCache();
   revalidatePath("/customers");
   return { ok: true };
 }
@@ -105,6 +108,7 @@ export async function deleteCustomer(id: string) {
   } catch {
     await prisma.customer.update({ where: { id }, data: { status: "INACTIVE" } });
   }
+  invalidateCustomersCache();
   revalidatePath("/customers");
   return { ok: true };
 }

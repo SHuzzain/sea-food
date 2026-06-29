@@ -1,30 +1,68 @@
-import { Filter } from "lucide-react";
+import { Suspense } from "react";
 import type { SavedSale } from "@/app/(app)/sale/actions";
 import { toPaymentReceipt } from "@/lib/payment-receipt";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { SelectNative } from "@/components/ui/select-native";
 import { CustomerStatementActions } from "@/components/reports/customer-statement-actions";
-import { ReportDownloadActions, type ReportDownloadData } from "@/components/reports/report-download-actions";
+import { ReportFilterForm } from "@/components/reports/report-filter-form";
+import { ReportTabs } from "@/components/reports/report-tabs";
+import { DEFAULT_REPORT_TAB, isReportTab, type ReportTab } from "@/lib/reports/tabs";
+import { SectionReportActions } from "@/components/reports/section-report-actions";
 import { InvoiceActions } from "@/components/transactions/invoice-actions";
 import { PaymentReceiptActions } from "@/components/transactions/payment-receipt-actions";
+import { PurchaseActions } from "@/components/transactions/purchase-actions";
 import { getBusinessProfile } from "@/lib/business-profile";
 import { buildCustomerStatementData } from "@/lib/customer-statement";
-import { getCustomerOptions } from "@/lib/options";
+import { getCustomerOptions, getProductOptions, getSupplierOptions } from "@/lib/options";
 import { prisma } from "@/lib/prisma";
-import { dateRangeFromFilter, decimalToNumber, formatRupee, todayInputValue } from "@/lib/utils";
+import {
+  dateRangeFromFilter,
+  decimalToNumber,
+  DEFAULT_DATE_RANGE,
+  endOfDay,
+  formatReportMoney,
+  formatRupee,
+  startOfWeek,
+  todayInputValue
+} from "@/lib/utils";
 import { buildWeeklySellBuyRows } from "@/lib/weekly-sell-buy";
 
 type ReportsPageProps = {
   searchParams: Promise<{
+    tab?: string;
     range?: string;
     from?: string;
     to?: string;
     customer?: string;
+    supplier?: string;
+    product?: string;
   }>;
 };
+
+type TransactionItem = {
+  productId: string;
+  product: { name: string };
+  amount: { toString(): string };
+};
+
+function filteredItems<T extends { productId: string }>(items: T[], productId?: string) {
+  return productId ? items.filter((item) => item.productId === productId) : items;
+}
+
+function sumItemAmounts(items: Array<{ amount: { toString(): string } }>) {
+  return items.reduce((sum, item) => sum + decimalToNumber(item.amount), 0);
+}
+
+function productNames(items: TransactionItem[], productId?: string) {
+  return filteredItems(items, productId)
+    .map((item) => item.product.name)
+    .join(", ");
+}
+
+function toPurchaseRef(purchaseDate: Date, id: string) {
+  const datePart = purchaseDate.toISOString().slice(0, 10).replace(/-/g, "");
+  return `PUR-${datePart}-${id.slice(-6).toUpperCase()}`;
+}
 
 function toSavedSale(sale: {
   id: string;
@@ -65,11 +103,26 @@ function toSavedSale(sale: {
 
 export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const params = await searchParams;
+  const activeTab: ReportTab = isReportTab(params.tab) ? params.tab : DEFAULT_REPORT_TAB;
   const range = dateRangeFromFilter(params);
-  const dateWhere = { gte: range.from, lte: range.to };
+  const from = range.from ?? startOfWeek(new Date());
+  const to = range.to ?? endOfDay(new Date());
+  const dateWhere = { gte: from, lte: to };
   const customerId = params.customer?.trim() || undefined;
+  const supplierId = params.supplier?.trim() || undefined;
+  const productId = params.product?.trim() || undefined;
   const customerWhere = customerId ? { customerId } : {};
   const customerFiltered = Boolean(customerId);
+  const purchaseWhere = {
+    purchaseDate: dateWhere,
+    ...(supplierId ? { supplierId } : {}),
+    ...(productId ? { items: { some: { productId } } } : {})
+  };
+  const saleWhere = {
+    invoiceDate: dateWhere,
+    ...customerWhere,
+    ...(productId ? { items: { some: { productId } } } : {})
+  };
   const outstandingWhere = {
     status: "ACTIVE" as const,
     outstandingBalance: { gt: 0 },
@@ -78,6 +131,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
 
   const [
     customers,
+    suppliers,
+    products,
     profile,
     purchases,
     sales,
@@ -89,14 +144,16 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     customerStatement
   ] = await Promise.all([
     getCustomerOptions(),
+    getSupplierOptions(),
+    getProductOptions(),
     getBusinessProfile(),
     prisma.purchase.findMany({
-      where: { purchaseDate: dateWhere },
+      where: purchaseWhere,
       orderBy: { purchaseDate: "desc" },
       include: { supplier: true, items: { include: { product: true } } }
     }),
     prisma.sale.findMany({
-      where: { invoiceDate: dateWhere, ...customerWhere },
+      where: saleWhere,
       orderBy: { invoiceDate: "desc" },
       include: { customer: true, items: { include: { product: true } } }
     }),
@@ -112,13 +169,15 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
         ledgerEntries: { take: 1, orderBy: { entryDate: "desc" } }
       }
     }),
-    prisma.purchase.aggregate({ where: { purchaseDate: dateWhere }, _sum: { totalAmount: true } }),
-    prisma.sale.aggregate({ where: { invoiceDate: dateWhere, ...customerWhere }, _sum: { totalAmount: true, receivedAmount: true } }),
+    prisma.purchase.aggregate({ where: purchaseWhere, _sum: { totalAmount: true } }),
+    prisma.sale.aggregate({ where: saleWhere, _sum: { totalAmount: true, receivedAmount: true } }),
     prisma.payment.aggregate({ where: { paymentDate: dateWhere, ...customerWhere }, _sum: { amount: true } }),
-    customerId ? buildCustomerStatementData(customerId, range.from, range.to, range.label) : Promise.resolve(null)
+    customerId ? buildCustomerStatementData(customerId, from, to, range.label) : Promise.resolve(null)
   ]);
 
   const selectedCustomer = customerId ? customers.find((customer) => customer.id === customerId) : undefined;
+  const selectedSupplier = supplierId ? suppliers.find((supplier) => supplier.id === supplierId) : undefined;
+  const selectedProduct = productId ? products.find((product) => product.id === productId) : undefined;
   const filteredCustomerRecord = customerId
     ? await prisma.customer.findUnique({
         where: { id: customerId },
@@ -126,17 +185,32 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
       })
     : null;
 
-  const purchaseAmount = decimalToNumber(purchaseTotal._sum.totalAmount);
-  const saleAmount = decimalToNumber(salesTotal._sum.totalAmount);
-  const saleReceived = decimalToNumber(salesTotal._sum.receivedAmount);
+  const purchaseAmount = productId
+    ? purchases.reduce((sum, purchase) => sum + sumItemAmounts(filteredItems(purchase.items, productId)), 0)
+    : decimalToNumber(purchaseTotal._sum.totalAmount);
+  const saleAmount = productId
+    ? sales.reduce((sum, sale) => sum + sumItemAmounts(filteredItems(sale.items, productId)), 0)
+    : decimalToNumber(salesTotal._sum.totalAmount);
+  const saleReceived = productId
+    ? sales.reduce((sum, sale) => {
+        const saleTotal = decimalToNumber(sale.totalAmount);
+        const filteredTotal = sumItemAmounts(filteredItems(sale.items, productId));
+        if (!saleTotal) {
+          return sum;
+        }
+        const ratio = filteredTotal / saleTotal;
+        return sum + decimalToNumber(sale.receivedAmount) * ratio;
+      }, 0)
+    : decimalToNumber(salesTotal._sum.receivedAmount);
   const paymentAmount = decimalToNumber(paymentTotal._sum.amount);
   const outstandingAmount = customerFiltered
     ? decimalToNumber(filteredCustomerRecord?.outstandingBalance)
     : outstandingCustomers.reduce((sum, customer) => sum + decimalToNumber(customer.outstandingBalance), 0);
 
-  const isWeeklyReport = (params.range ?? "today") === "week" && !customerFiltered;
+  const isWeeklyReport =
+    (params.range ?? DEFAULT_DATE_RANGE) === "week" && !customerFiltered && !supplierId && !productId;
   const weeklySellBuyRows = isWeeklyReport
-    ? buildWeeklySellBuyRows(range.from, range.to, purchases, sales).map((row) => ({
+    ? buildWeeklySellBuyRows(from, to, purchases, sales).map((row) => ({
         ...row,
         balance: row.profit
       }))
@@ -144,247 +218,334 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const weeklyPurchaseTotal = weeklySellBuyRows.reduce((sum, row) => sum + row.purchase, 0);
   const weeklySalesTotal = weeklySellBuyRows.reduce((sum, row) => sum + row.sales, 0);
 
-  const reportDownloadData: ReportDownloadData = {
-    label: range.label,
-    from: range.from.toLocaleDateString("en-IN"),
-    to: range.to.toLocaleDateString("en-IN"),
-    customerName: selectedCustomer?.label,
-    customerFiltered,
-    business: profile,
-    summary: {
-      purchase: purchaseAmount,
-      sales: saleAmount,
-      collection: saleReceived + paymentAmount,
-      outstanding: outstandingAmount
-    },
-    weeklySellBuy: weeklySellBuyRows,
-    statement: customerStatement
-      ? {
-          openingBalance: customerStatement.openingBalance,
-          closingBalance: customerStatement.closingBalance,
-          totalSales: customerStatement.totalSales,
-          totalPayments: customerStatement.totalPayments,
-          rows: customerStatement.rows
-        }
-      : undefined,
-    purchases: purchases.map((purchase) => ({
-      date: purchase.purchaseDate.toLocaleDateString("en-IN"),
-      supplier: purchase.supplier.name,
-      products: purchase.items.map((item) => item.product.name).join(", "),
-      amount: decimalToNumber(purchase.totalAmount)
-    })),
-    sales: sales.map((sale) => ({
-      date: sale.invoiceDate.toLocaleDateString("en-IN"),
-      invoiceNo: sale.invoiceNo,
-      customer: sale.customer.name,
-      products: sale.items.map((item) => item.product.name).join(", "),
-      amount: decimalToNumber(sale.totalAmount)
-    })),
-    outstandingCustomers: outstandingCustomers.map((customer) => ({
-      customer: customer.name,
-      mobile: customer.mobile ?? "",
-      balance: decimalToNumber(customer.outstandingBalance)
-    })),
-    payments: payments.map((payment) => ({
-      date: payment.paymentDate.toLocaleDateString("en-IN"),
-      customer: payment.customer.name,
-      mode: payment.paymentMode,
-      amount: decimalToNumber(payment.amount)
-    }))
+  const periodFrom = from.toLocaleDateString("en-IN");
+  const periodTo = to.toLocaleDateString("en-IN");
+
+  const purchaseSection = {
+    title: "Purchase Report",
+    periodLabel: range.label,
+    from: periodFrom,
+    to: periodTo,
+    customerName: [selectedSupplier?.label, selectedProduct?.label].filter(Boolean).join(" · ") || undefined,
+    head: ["Date", "Supplier", "Products", "Amount"],
+    rows: purchases.map((purchase) => [
+      purchase.purchaseDate.toLocaleDateString("en-IN"),
+      purchase.supplier.name,
+      productNames(purchase.items, productId),
+      formatReportMoney(
+        productId ? sumItemAmounts(filteredItems(purchase.items, productId)) : decimalToNumber(purchase.totalAmount)
+      )
+    ]),
+    totalRow: ["Total", "", "", formatReportMoney(purchaseAmount)],
+    summaryRows: [
+      ...(selectedSupplier ? [{ label: "Supplier", value: selectedSupplier.label }] : []),
+      ...(selectedProduct ? [{ label: "Product", value: selectedProduct.label }] : []),
+      { label: "Total Purchase", value: formatRupee(purchaseAmount) }
+    ]
   };
+
+  const salesSection = {
+    title: "Sales Report",
+    periodLabel: range.label,
+    from: periodFrom,
+    to: periodTo,
+    customerName: [selectedCustomer?.label, selectedProduct?.label].filter(Boolean).join(" · ") || undefined,
+    head: ["Date", "Invoice", "Customer", "Products", "Amount"],
+    rows: sales.map((sale) => [
+      sale.invoiceDate.toLocaleDateString("en-IN"),
+      sale.invoiceNo,
+      sale.customer.name,
+      productNames(sale.items, productId),
+      formatReportMoney(productId ? sumItemAmounts(filteredItems(sale.items, productId)) : decimalToNumber(sale.totalAmount))
+    ]),
+    totalRow: ["Total", "", "", "", formatReportMoney(saleAmount)],
+    summaryRows: [
+      ...(selectedCustomer ? [{ label: "Customer", value: selectedCustomer.label }] : []),
+      ...(selectedProduct ? [{ label: "Product", value: selectedProduct.label }] : []),
+      { label: "Total Sales", value: formatRupee(saleAmount) }
+    ]
+  };
+
+  const outstandingSection = {
+    title: "Customer Outstanding Report",
+    periodLabel: activeTab === "outstanding" ? "Current" : range.label,
+    from: activeTab === "outstanding" ? "—" : periodFrom,
+    to: activeTab === "outstanding" ? "—" : periodTo,
+    head: ["Customer", "Mobile", "Balance"],
+    rows: outstandingCustomers.map((customer) => [
+      customer.name,
+      customer.mobile || "-",
+      formatReportMoney(decimalToNumber(customer.outstandingBalance))
+    ]),
+    totalRow: ["Total Outstanding", "", formatReportMoney(outstandingAmount)],
+    summaryRows: [{ label: "Total Outstanding", value: formatRupee(outstandingAmount) }]
+  };
+
+  const paymentSection = {
+    title: "Payment Collection Report",
+    periodLabel: range.label,
+    from: periodFrom,
+    to: periodTo,
+    customerName: selectedCustomer?.label,
+    head: ["Date", "Customer", "Mode", "Amount"],
+    rows: payments.map((payment) => [
+      payment.paymentDate.toLocaleDateString("en-IN"),
+      payment.customer.name,
+      payment.paymentMode,
+      formatReportMoney(decimalToNumber(payment.amount))
+    ]),
+    totalRow: ["Total Collection", "", "", formatReportMoney(paymentAmount)],
+    summaryRows: [{ label: "Total Collection", value: formatRupee(paymentAmount) }]
+  };
+
+  const tabSummary =
+    activeTab === "purchase"
+      ? { label: "Total Purchase", value: purchaseAmount }
+      : activeTab === "sales"
+        ? { label: "Total Sales", value: saleAmount }
+        : activeTab === "outstanding"
+          ? { label: "Total Outstanding", value: outstandingAmount }
+          : { label: "Total Collection", value: paymentAmount };
+
+  const activeFilters = [
+    activeTab !== "outstanding" ? range.label : null,
+    selectedCustomer?.label ?? null,
+    selectedSupplier?.label ?? null,
+    selectedProduct?.label ?? null
+  ].filter(Boolean);
 
   return (
     <div className="app-container py-5 lg:py-8">
       <div className="mb-5">
         <h1 className="text-2xl font-semibold tracking-normal">Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          {customerFiltered
-            ? "Customer sales, collections, outstanding and weekly statement."
-            : "Purchase, sales, outstanding and collection reports."}
-        </p>
+        <p className="text-sm text-muted-foreground">Choose a report tab and apply filters for that section only.</p>
       </div>
 
       <Card className="mb-5">
-        <CardContent className="p-4">
-          <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-[160px_1fr_1fr_1fr_auto]" action="/reports">
-            <SelectNative name="range" defaultValue={params.range ?? "today"}>
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="custom">Custom Date</option>
-            </SelectNative>
-            <SelectNative name="customer" defaultValue={params.customer ?? ""}>
-              <option value="">All Customers</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.label}
-                </option>
-              ))}
-            </SelectNative>
-            <Input name="from" type="date" defaultValue={params.from ?? todayInputValue()} />
-            <Input name="to" type="date" defaultValue={params.to ?? todayInputValue()} />
-            <Button type="submit" size="lg">
-              <Filter className="h-4 w-4" />
-              Apply
-            </Button>
-          </form>
-          {selectedCustomer ? (
-            <p className="mt-3 text-sm text-muted-foreground">
-              Filtered for <span className="font-medium text-foreground">{selectedCustomer.label}</span>
+        <CardContent className="space-y-4 p-4">
+          <Suspense fallback={<div className="h-10 rounded-md bg-muted" />}>
+            <ReportTabs activeTab={activeTab} />
+          </Suspense>
+          <ReportFilterForm
+            tab={activeTab}
+            range={params.range ?? DEFAULT_DATE_RANGE}
+            customer={params.customer ?? ""}
+            supplier={params.supplier ?? ""}
+            product={params.product ?? ""}
+            date={params.from ?? params.to ?? todayInputValue()}
+            customers={customers}
+            suppliers={suppliers}
+            products={products}
+          />
+          {activeFilters.length ? (
+            <p className="text-sm text-muted-foreground">
+              Filtered for <span className="font-medium text-foreground">{activeFilters.join(" · ")}</span>
             </p>
           ) : null}
-          <div className="mt-3">
-            <ReportDownloadActions report={reportDownloadData} />
-          </div>
         </CardContent>
       </Card>
 
-      <div className={`mb-5 grid gap-3 sm:grid-cols-2 ${customerFiltered ? "xl:grid-cols-3" : "xl:grid-cols-4"}`}>
-        {!customerFiltered ? (
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Purchase</p>
-              <p className="text-2xl font-semibold">{formatRupee(purchaseAmount)}</p>
-            </CardContent>
-          </Card>
-        ) : null}
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Sales</p>
-            <p className="text-2xl font-semibold">{formatRupee(saleAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Collection</p>
-            <p className="text-2xl font-semibold">{formatRupee(saleReceived + paymentAmount)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">{customerFiltered ? "Outstanding" : "Total Outstanding"}</p>
-            <p className="text-2xl font-semibold">{formatRupee(outstandingAmount)}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="mb-5">
+        <CardContent className="p-4">
+          <p className="text-sm text-muted-foreground">{tabSummary.label}</p>
+          <p className="text-2xl font-semibold">{formatRupee(tabSummary.value)}</p>
+        </CardContent>
+      </Card>
 
       <div className="space-y-5">
-        {customerStatement ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between gap-3">
-                Customer Statement
-                <Badge variant="outline">{range.label}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CustomerStatementActions statement={customerStatement} profile={profile} />
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {isWeeklyReport ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Weekly Sell & Buy Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead className="bg-muted text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium">Date</th>
-                      <th className="px-3 py-2 text-right font-medium">Purchase / Buy</th>
-                      <th className="px-3 py-2 text-right font-medium">Sales / Sell</th>
-                      <th className="px-3 py-2 text-right font-medium">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {weeklySellBuyRows.map((row) => (
-                      <tr key={row.key} className="border-t">
-                        <td className="px-3 py-2">{row.date}</td>
-                        <td className="px-3 py-2 text-right">{formatRupee(row.purchase)}</td>
-                        <td className="px-3 py-2 text-right">{formatRupee(row.sales)}</td>
-                        <td className="px-3 py-2 text-right font-medium">{formatRupee(row.balance)}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t bg-muted/60 font-semibold">
-                      <td className="px-3 py-2">Week Total</td>
-                      <td className="px-3 py-2 text-right">{formatRupee(weeklyPurchaseTotal)}</td>
-                      <td className="px-3 py-2 text-right">{formatRupee(weeklySalesTotal)}</td>
-                      <td className="px-3 py-2 text-right">{formatRupee(weeklySalesTotal - weeklyPurchaseTotal)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {!customerFiltered ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between gap-3">
-                Purchase Report
-                <Badge variant="outline">{range.label}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {purchases.length ? (
-                purchases.map((purchase) => (
-                  <div key={purchase.id} className="rounded-md border p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{purchase.supplier.name}</p>
-                        <p className="text-xs text-muted-foreground">{purchase.purchaseDate.toLocaleDateString("en-IN")}</p>
-                      </div>
-                      <p className="font-semibold">{formatRupee(decimalToNumber(purchase.totalAmount))}</p>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">{purchase.items.map((item) => item.product.name).join(", ")}</p>
+        {activeTab === "purchase" ? (
+          <>
+            {isWeeklyReport ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Weekly Sell & Buy Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full min-w-[560px] text-sm">
+                      <thead className="bg-muted text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium">Date</th>
+                          <th className="px-3 py-2 text-right font-medium">Purchase / Buy</th>
+                          <th className="px-3 py-2 text-right font-medium">Sales / Sell</th>
+                          <th className="px-3 py-2 text-right font-medium">Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {weeklySellBuyRows.map((row) => (
+                          <tr key={row.key} className="border-t">
+                            <td className="px-3 py-2">{row.date}</td>
+                            <td className="px-3 py-2 text-right">{formatRupee(row.purchase)}</td>
+                            <td className="px-3 py-2 text-right">{formatRupee(row.sales)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatRupee(row.balance)}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t bg-muted/60 font-semibold">
+                          <td className="px-3 py-2">Week Total</td>
+                          <td className="px-3 py-2 text-right">{formatRupee(weeklyPurchaseTotal)}</td>
+                          <td className="px-3 py-2 text-right">{formatRupee(weeklySalesTotal)}</td>
+                          <td className="px-3 py-2 text-right">{formatRupee(weeklySalesTotal - weeklyPurchaseTotal)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                ))
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <Card>
+              <CardHeader className="space-y-3">
+                <CardTitle className="flex items-center justify-between gap-3">
+                  Purchase Report
+                  <Badge variant="outline">{range.label}</Badge>
+                </CardTitle>
+                <SectionReportActions section={purchaseSection} profile={profile} compact />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {purchases.length ? (
+                  purchases.map((purchase) => {
+                  const refNo = toPurchaseRef(purchase.purchaseDate, purchase.id);
+                  const purchaseDate = purchase.purchaseDate.toLocaleDateString("en-IN");
+                  const visibleItems = filteredItems(purchase.items, productId);
+                  const items = visibleItems.map((item) => ({
+                    productName: item.product.name,
+                    kg: decimalToNumber(item.kg),
+                    rate: decimalToNumber(item.rate),
+                    amount: decimalToNumber(item.amount)
+                  }));
+                  const displayAmount = productId ? sumItemAmounts(visibleItems) : decimalToNumber(purchase.totalAmount);
+
+                  return (
+                    <div key={purchase.id} className="rounded-md border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">{purchase.supplier.name}</p>
+                          <p className="text-xs text-muted-foreground">{purchaseDate}</p>
+                        </div>
+                        <div className="flex items-start gap-1">
+                          <p className="font-semibold">{formatRupee(displayAmount)}</p>
+                          <PurchaseActions
+                            purchase={{
+                              refNo,
+                              purchaseDate,
+                              supplier: {
+                                name: purchase.supplier.name,
+                                mobile: purchase.supplier.mobile ?? ""
+                              },
+                              items,
+                              totalAmount: displayAmount
+                            }}
+                            profile={profile}
+                            compact
+                            editable={{
+                              id: purchase.id,
+                              purchaseDate: todayInputValue(purchase.purchaseDate),
+                              supplierId: purchase.supplierId,
+                              items: purchase.items.map((item) => ({
+                                productId: item.productId,
+                                kg: decimalToNumber(item.kg),
+                                rate: decimalToNumber(item.rate)
+                              }))
+                            }}
+                            suppliers={suppliers}
+                            products={products}
+                          />
+                        </div>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">{productNames(purchase.items, productId)}</p>
+                    </div>
+                  );
+                })
               ) : (
                 <p className="text-sm text-muted-foreground">No purchases in this period.</p>
               )}
             </CardContent>
-          </Card>
+            </Card>
+          </>
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-3">
-              Sales Report
-              {selectedCustomer ? <Badge variant="outline">{selectedCustomer.label}</Badge> : null}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {sales.length ? (
-              sales.map((sale) => (
-                <div key={sale.id} className="rounded-md border p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{sale.invoiceNo}</p>
-                      <p className="text-sm text-muted-foreground">{sale.customer.name}</p>
-                      <p className="text-xs text-muted-foreground">{sale.invoiceDate.toLocaleDateString("en-IN")}</p>
-                    </div>
-                    <p className="font-semibold">{formatRupee(decimalToNumber(sale.totalAmount))}</p>
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">{sale.items.map((item) => item.product.name).join(", ")}</p>
-                  <div className="mt-3">
-                    <InvoiceActions sale={toSavedSale(sale)} compact profile={profile} />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted-foreground">No sales in this period.</p>
-            )}
-          </CardContent>
-        </Card>
+        {activeTab === "sales" ? (
+          <>
+            {customerStatement ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between gap-3">
+                    Customer Statement
+                    <Badge variant="outline">{range.label}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CustomerStatementActions statement={customerStatement} profile={profile} />
+                </CardContent>
+              </Card>
+            ) : null}
 
-        {!customerFiltered ? (
+            <Card>
+              <CardHeader className="space-y-3">
+                <CardTitle className="flex items-center justify-between gap-3">
+                  Sales Report
+                  {selectedCustomer ? <Badge variant="outline">{selectedCustomer.label}</Badge> : <Badge variant="outline">{range.label}</Badge>}
+                </CardTitle>
+                <SectionReportActions section={salesSection} profile={profile} compact />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {sales.length ? (
+                  sales.map((sale) => {
+                    const displayAmount = productId
+                      ? sumItemAmounts(filteredItems(sale.items, productId))
+                      : decimalToNumber(sale.totalAmount);
+
+                    return (
+                      <div key={sale.id} className="rounded-md border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-medium">{sale.invoiceNo}</p>
+                            <p className="text-sm text-muted-foreground">{sale.customer.name}</p>
+                            <p className="text-xs text-muted-foreground">{sale.invoiceDate.toLocaleDateString("en-IN")}</p>
+                          </div>
+                          <div className="flex items-start gap-1">
+                            <p className="font-semibold">{formatRupee(displayAmount)}</p>
+                            <InvoiceActions
+                              sale={toSavedSale(sale)}
+                              compact
+                              profile={profile}
+                              editable={{
+                                id: sale.id,
+                                invoiceNo: sale.invoiceNo,
+                                invoiceDate: todayInputValue(sale.invoiceDate),
+                                customerId: sale.customerId,
+                                receivedAmount: decimalToNumber(sale.receivedAmount),
+                                items: sale.items.map((item) => ({
+                                  productId: item.productId,
+                                  kg: decimalToNumber(item.kg),
+                                  rate: decimalToNumber(item.rate)
+                                }))
+                              }}
+                              customers={customers}
+                              products={products}
+                            />
+                          </div>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">{productNames(sale.items, productId)}</p>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-muted-foreground">No sales in this period.</p>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        ) : null}
+
+        {activeTab === "outstanding" ? (
           <Card>
-            <CardHeader>
-              <CardTitle>Customer Outstanding Report</CardTitle>
+            <CardHeader className="space-y-3">
+              <CardTitle className="flex items-center justify-between gap-3">
+                Customer Outstanding Report
+                {selectedCustomer ? <Badge variant="outline">{selectedCustomer.label}</Badge> : null}
+              </CardTitle>
+              <SectionReportActions section={outstandingSection} profile={profile} compact />
             </CardHeader>
             <CardContent className="space-y-3">
               {outstandingCustomers.length ? (
@@ -404,36 +565,55 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           </Card>
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment Collection Report</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {payments.length ? (
-              payments.map((payment) => {
-                const receipt = toPaymentReceipt(payment);
-                return (
-                  <div key={payment.id} className="rounded-md border p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium">{payment.customer.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {payment.paymentMode} · {payment.paymentDate.toLocaleDateString("en-IN")}
-                        </p>
+        {activeTab === "payment" ? (
+          <Card>
+            <CardHeader className="space-y-3">
+              <CardTitle className="flex items-center justify-between gap-3">
+                Payment Collection Report
+                {selectedCustomer ? <Badge variant="outline">{selectedCustomer.label}</Badge> : <Badge variant="outline">{range.label}</Badge>}
+              </CardTitle>
+              <SectionReportActions section={paymentSection} profile={profile} compact />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {payments.length ? (
+                payments.map((payment) => {
+                  const receipt = toPaymentReceipt(payment);
+                  return (
+                    <div key={payment.id} className="rounded-md border p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">{payment.customer.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {payment.paymentMode} · {payment.paymentDate.toLocaleDateString("en-IN")}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <p className="font-semibold">{formatRupee(decimalToNumber(payment.amount))}</p>
+                          <PaymentReceiptActions
+                            receipt={receipt}
+                            compact
+                            profile={profile}
+                            editable={{
+                              id: payment.id,
+                              customerId: payment.customerId,
+                              paymentDate: todayInputValue(payment.paymentDate),
+                              amount: decimalToNumber(payment.amount),
+                              paymentMode: payment.paymentMode,
+                              notes: payment.notes ?? ""
+                            }}
+                            customers={customers}
+                          />
+                        </div>
                       </div>
-                      <p className="font-semibold">{formatRupee(decimalToNumber(payment.amount))}</p>
                     </div>
-                    <div className="mt-3">
-                      <PaymentReceiptActions receipt={receipt} compact profile={profile} />
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-sm text-muted-foreground">No payment collections in this period.</p>
-            )}
-          </CardContent>
-        </Card>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-muted-foreground">No payment collections in this period.</p>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

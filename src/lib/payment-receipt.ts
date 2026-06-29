@@ -1,6 +1,6 @@
 import type { PaymentMode } from "@prisma/client";
 import type { PaymentReceiptDocument } from "@/lib/documents/types";
-import { decimalToNumber } from "@/lib/utils";
+import { decimalToNumber, formatDisplayDate } from "@/lib/utils";
 
 function signedMoney(value: number) {
   if (!Number.isFinite(value)) {
@@ -11,7 +11,7 @@ function signedMoney(value: number) {
 
 export function toPaymentReceipt(payment: {
   id: string;
-  paymentDate: Date;
+  paymentDate: Date | string;
   amount: { toString(): string };
   paymentMode: PaymentMode;
   notes: string | null;
@@ -25,7 +25,7 @@ export function toPaymentReceipt(payment: {
 
   return {
     refNo: payment.id.slice(-8).toUpperCase(),
-    paymentDate: payment.paymentDate.toLocaleDateString("en-IN"),
+    paymentDate: formatDisplayDate(payment.paymentDate),
     customer: {
       name: payment.customer.name,
       mobile: payment.customer.mobile ?? ""

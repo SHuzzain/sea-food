@@ -1,55 +1,135 @@
-import { SaleForm } from "@/components/transactions/sale-form";
-import { Card, CardContent } from "@/components/ui/card";
+import { Suspense } from "react";
+import { SalesList } from "@/components/transactions/sales-list";
+import type { SavedSale } from "@/app/(app)/sale/actions";
+import { getCachedSalesPage } from "@/lib/cache/queries";
 import { getBusinessProfile } from "@/lib/business-profile";
 import { getCustomerOptions, getProductOptions } from "@/lib/options";
-import { prisma } from "@/lib/prisma";
-import { decimalToNumber, formatRupee, todayInputValue } from "@/lib/utils";
+import { parsePageParam } from "@/lib/pagination";
+import {
+  dateRangeFromFilter,
+  decimalToNumber,
+  DEFAULT_LIST_DATE_RANGE,
+  formatDisplayDate,
+  todayInputValue
+} from "@/lib/utils";
 
-export default async function SalePage() {
-  const [customers, products, profile, recentSales] = await Promise.all([
+type SalePageProps = {
+  searchParams: Promise<{
+    page?: string;
+    range?: string;
+    from?: string;
+    to?: string;
+    customer?: string;
+  }>;
+};
+
+function toSavedSale(sale: {
+  id: string;
+  invoiceNo: string;
+  invoiceDate: Date | string;
+  previousBalance: { toString(): string };
+  totalAmount: { toString(): string };
+  receivedAmount: { toString(): string };
+  currentBalance: { toString(): string };
+  customer: { name: string; mobile: string | null };
+  items: Array<{
+    product: { name: string };
+    kg: { toString(): string };
+    rate: { toString(): string };
+    amount: { toString(): string };
+  }>;
+}): SavedSale {
+  return {
+    id: sale.id,
+    invoiceNo: sale.invoiceNo,
+    invoiceDate: formatDisplayDate(sale.invoiceDate),
+    customer: {
+      name: sale.customer.name,
+      mobile: sale.customer.mobile ?? ""
+    },
+    items: sale.items.map((item) => ({
+      productName: item.product.name,
+      kg: decimalToNumber(item.kg),
+      rate: decimalToNumber(item.rate),
+      amount: decimalToNumber(item.amount)
+    })),
+    previousBalance: decimalToNumber(sale.previousBalance),
+    totalAmount: decimalToNumber(sale.totalAmount),
+    receivedAmount: decimalToNumber(sale.receivedAmount),
+    currentBalance: decimalToNumber(sale.currentBalance)
+  };
+}
+
+export default async function SalePage({ searchParams }: SalePageProps) {
+  const params = await searchParams;
+  const page = parsePageParam(params.page);
+  const range = dateRangeFromFilter(params, DEFAULT_LIST_DATE_RANGE);
+  const customerId = params.customer?.trim() || undefined;
+  const today = todayInputValue();
+
+  const [customers, products, profile, salesResult] = await Promise.all([
     getCustomerOptions(),
     getProductOptions(),
     getBusinessProfile(),
-    prisma.sale.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: { customer: true, items: { include: { product: true } } }
-    })
+    getCachedSalesPage(
+      {
+        page,
+        rangeKey: params.range ?? DEFAULT_LIST_DATE_RANGE,
+        from: params.from,
+        to: params.to,
+        customerId
+      },
+      range
+    )
   ]);
+
+  const saleItems = salesResult.items.map((sale) => {
+    const savedSale = toSavedSale(sale);
+    return {
+      id: sale.id,
+      invoiceNo: sale.invoiceNo,
+      invoiceDate: savedSale.invoiceDate,
+      customerName: sale.customer.name,
+      productNames: savedSale.items.map((item) => item.productName).join(", "),
+      totalAmount: savedSale.totalAmount,
+      sale: savedSale,
+      editable: {
+        id: sale.id,
+        invoiceNo: sale.invoiceNo,
+        invoiceDate: todayInputValue(sale.invoiceDate),
+        customerId: sale.customerId,
+        receivedAmount: savedSale.receivedAmount,
+        items: sale.items.map((item) => ({
+          productId: item.productId,
+          kg: decimalToNumber(item.kg),
+          rate: decimalToNumber(item.rate)
+        }))
+      }
+    };
+  });
 
   return (
     <div className="app-container py-5 lg:py-8">
       <div className="mb-5">
-        <h1 className="text-2xl font-semibold tracking-normal">Sale</h1>
-        <p className="text-sm text-muted-foreground">Create mobile-friendly sale bills and share invoices.</p>
+        <h1 className="text-2xl font-semibold tracking-normal">Sales</h1>
+        <p className="text-sm text-muted-foreground">View sale bills, filter by date or customer, and share invoices.</p>
       </div>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <SaleForm customers={customers} products={products} today={todayInputValue()} profile={profile} />
-        <aside className="space-y-3">
-          <h2 className="font-semibold">Recent Sales</h2>
-          {recentSales.length ? (
-            recentSales.map((sale) => (
-              <Card key={sale.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-medium">{sale.invoiceNo}</p>
-                      <p className="text-sm text-muted-foreground">{sale.customer.name}</p>
-                      <p className="text-xs text-muted-foreground">{sale.invoiceDate.toLocaleDateString("en-IN")}</p>
-                    </div>
-                    <p className="font-semibold">{formatRupee(decimalToNumber(sale.totalAmount))}</p>
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">{sale.items.map((item) => item.product.name).join(", ")}</p>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">No sales yet.</CardContent>
-            </Card>
-          )}
-        </aside>
-      </div>
+      <Suspense fallback={<div className="text-sm text-muted-foreground">Loading sales...</div>}>
+        <SalesList
+          sales={saleItems}
+          customers={customers}
+          products={products}
+          profile={profile}
+          filter={{
+            range: params.range ?? DEFAULT_LIST_DATE_RANGE,
+            from: params.from ?? today,
+            to: params.to ?? today,
+            customer: params.customer ?? ""
+          }}
+          filterLabel={range.label}
+          pagination={salesResult.pagination}
+        />
+      </Suspense>
     </div>
   );
 }

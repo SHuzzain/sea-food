@@ -53,6 +53,22 @@ export type CustomerStatementRow = {
   balance: number;
 };
 
+export type PurchaseDocument = {
+  refNo: string;
+  purchaseDate: string;
+  supplier: {
+    name: string;
+    mobile: string;
+  };
+  items: {
+    productName: string;
+    kg: number;
+    rate: number;
+    amount: number;
+  }[];
+  totalAmount: number;
+};
+
 export type CustomerStatementDocument = {
   customer: {
     name: string;

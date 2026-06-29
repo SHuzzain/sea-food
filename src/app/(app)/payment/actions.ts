@@ -2,9 +2,11 @@
 
 import { PaymentMode } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { invalidateCustomersCache, invalidatePaymentsCache } from "@/lib/cache/invalidate";
 import { requireUser } from "@/lib/auth";
 import type { PaymentReceiptDocument } from "@/lib/documents/types";
 import { prisma } from "@/lib/prisma";
+import { recalculateCustomerLedger } from "@/lib/customer-ledger";
 import { decimalToNumber, parseDateInput, toMoney } from "@/lib/utils";
 
 export type PaymentPayload = {
@@ -94,9 +96,105 @@ export async function createPayment(payload: PaymentPayload) {
     currentBalance
   };
 
+  invalidatePaymentsCache();
+  invalidateCustomersCache();
   revalidatePath("/");
   revalidatePath("/payment");
+  revalidatePath("/payment/new");
   revalidatePath("/customers");
   revalidatePath("/reports");
   return { ok: true, paymentId: payment.id, currentBalance, receipt };
+}
+
+export async function updatePayment(id: string, payload: PaymentPayload) {
+  await requireUser();
+  const amount = toMoney(payload.amount);
+  const paymentDate = payload.paymentDate ? parseDateInput(payload.paymentDate) : new Date();
+  const mode = validMode(payload.paymentMode) ? payload.paymentMode : PaymentMode.CASH;
+
+  if (!payload.customerId) {
+    return { ok: false, error: "Select a customer." };
+  }
+  if (amount <= 0) {
+    return { ok: false, error: "Enter a payment amount." };
+  }
+
+  const existing = await prisma.payment.findUnique({
+    where: { id },
+    select: { id: true, customerId: true }
+  });
+  if (!existing) {
+    return { ok: false, error: "Payment not found." };
+  }
+
+  const customer = await prisma.customer.findUnique({ where: { id: payload.customerId } });
+  if (!customer) {
+    return { ok: false, error: "Customer not found." };
+  }
+
+  const previousCustomerId = existing.customerId;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.update({
+      where: { id },
+      data: {
+        customerId: payload.customerId,
+        paymentDate,
+        amount,
+        paymentMode: mode,
+        notes: payload.notes?.trim() || ""
+      }
+    });
+
+    await tx.ledgerEntry.updateMany({
+      where: { paymentId: id },
+      data: {
+        customerId: payload.customerId,
+        entryDate: paymentDate,
+        credit: amount,
+        debit: 0,
+        description: `Payment - ${mode}`
+      }
+    });
+
+    await recalculateCustomerLedger(payload.customerId, tx);
+    if (previousCustomerId !== payload.customerId) {
+      await recalculateCustomerLedger(previousCustomerId, tx);
+    }
+  });
+
+  invalidatePaymentsCache();
+  invalidateCustomersCache();
+  revalidatePath("/");
+  revalidatePath("/payment");
+  revalidatePath("/payment/new");
+  revalidatePath("/customers");
+  revalidatePath("/reports");
+  return { ok: true };
+}
+
+export async function deletePayment(id: string) {
+  await requireUser();
+  const existing = await prisma.payment.findUnique({
+    where: { id },
+    select: { id: true, customerId: true }
+  });
+  if (!existing) {
+    return { ok: false, error: "Payment not found." };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ledgerEntry.deleteMany({ where: { paymentId: id } });
+    await tx.payment.delete({ where: { id } });
+    await recalculateCustomerLedger(existing.customerId, tx);
+  });
+
+  invalidatePaymentsCache();
+  invalidateCustomersCache();
+  revalidatePath("/");
+  revalidatePath("/payment");
+  revalidatePath("/payment/new");
+  revalidatePath("/customers");
+  revalidatePath("/reports");
+  return { ok: true };
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { invalidateSuppliersCache } from "@/lib/cache/invalidate";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -32,6 +33,7 @@ export async function createSupplier(payload: SupplierPayload) {
     select: { id: true, name: true, mobile: true }
   });
 
+  invalidateSuppliersCache();
   revalidatePath("/suppliers");
   return { ok: true, supplier: { id: supplier.id, label: supplier.name, meta: supplier.mobile ?? "" } };
 }
@@ -43,6 +45,7 @@ export async function updateSupplier(id: string, payload: SupplierPayload) {
     return { ok: false, error: "Supplier name is required." };
   }
   await prisma.supplier.update({ where: { id }, data });
+  invalidateSuppliersCache();
   revalidatePath("/suppliers");
   return { ok: true };
 }
@@ -54,6 +57,7 @@ export async function deleteSupplier(id: string) {
   } catch {
     await prisma.supplier.update({ where: { id }, data: { status: "INACTIVE" } });
   }
+  invalidateSuppliersCache();
   revalidatePath("/suppliers");
   return { ok: true };
 }

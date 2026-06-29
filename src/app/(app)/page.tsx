@@ -114,7 +114,7 @@ export default async function DashboardPage() {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>This Week Sell & Buy</CardTitle>
           <Button asChild variant="outline" size="sm">
-            <Link href="/reports?range=week">
+            <Link href="/reports?tab=purchase&range=week">
               Full Report
               <ArrowRight className="h-4 w-4" />
             </Link>
